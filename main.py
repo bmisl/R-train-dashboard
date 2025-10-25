@@ -201,24 +201,43 @@ def render_train_column(col, trains, title, active):
         if i == 0 and active:
             col.markdown(
                 f"""
-                <div style="
-                    display: inline-block;
-                    background-color: rgba(200,200,200,0.35);
-                    padding: 4px 8px;
-                    border-radius: 6px;
-                    line-height: 1.2;
-                    margin-bottom: 4px;
-                ">
+                <style>
+                    .next-train-box {{
+                        display: inline-block;
+                        padding: 6px 10px;
+                        border-radius: 6px;
+                        line-height: 1.2;
+                    }}
+
+                    /* Light mode */
+                    @media (prefers-color-scheme: light) {{
+                        .next-train-box {{
+                            background-color: rgba(200, 200, 200, 0.35);  /* Light grey */
+                            color: #222;
+                        }}
+                    }}
+
+                    /* Dark mode */
+                    @media (prefers-color-scheme: dark) {{
+                        .next-train-box {{
+                            background-color: rgba(255, 255, 255, 0.08);  /* Soft light overlay */
+                            color: #eee;
+                        }}
+                    }}
+                </style>
+
+                <div class="next-train-box">
                     <span style="font-weight:600;">
                         To {dest} (R {num}) — {text}
                     </span><br>
-                    <span style="font-size:12px; color:gray;">
+                    <span style="font-size:12px; opacity:0.8;">
                         Platform {platform} · departs in {mins} min
                     </span>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
+
 
         # ✅ First train in non-active column → no grey background
         elif i == 0:
