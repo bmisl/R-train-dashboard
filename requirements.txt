@@ -2,3 +2,8 @@ streamlit
 requests
 pytz
 streamlit-autorefresh
+
+# New dependencies required for your updated app:
+folium
+streamlit-folium
+python-dateutil
