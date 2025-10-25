@@ -11,7 +11,7 @@ from trains import (
     final_destination_name,
     parse_time,
     format_hki,
-    heading_md,  # NEW: underline support for active column
+    heading_md,  # underline support for active column
 )
 
 from roads import (
@@ -46,6 +46,15 @@ BOUNDING_BOX = [
 # PAGE CONFIG
 # ----------------------------
 st.set_page_config(page_title="Ainola ↔ Helsinki R-trains", page_icon="🚆", layout="wide")
+
+st.markdown("""
+    <style>
+        div[data-testid="column"] {
+            padding-left: 0.3rem;
+            padding-right: 0.3rem;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # Show UI instantly — placeholder before data is loaded
 st.title("🚆 Ainola ↔ Helsinki R-trains")
@@ -177,62 +186,69 @@ focus_H_to_A = dtime(12, 0) <= now_local < dtime(17, 0)
 focus_label = "Helsinki → Ainola" if focus_H_to_A else "Ainola → Helsinki"
 
 # ----------------------------
-# NEXT TRAIN SELECTION
-# ----------------------------
-active_trains = trains_H_to_A if focus_H_to_A else trains_A_to_H
-next_train = None
-for sched, num, text, best_time, platform, rows in active_trains:
-    if best_time >= now_utc:
-        next_train = (num, text, platform, rows, sched)
-        break
-
-# ----------------------------
 # TRAIN LISTS
 # ----------------------------
-col1, col2 = st.columns(2)
+col1, col2 = st.columns(2, gap="small")   # or "tiny", "medium", "large"
 
 def render_train_column(col, trains, title, active):
-    # Underline active column heading
     col.markdown(heading_md(title, active), unsafe_allow_html=True)
 
-    for sched, num, text, best, platform, rows in trains:
+    for i, (sched, num, text, best, platform, rows) in enumerate(trains):
         dest = final_destination_name(rows, station_names)
-        line = f"To {dest} (R {num}) — {text}"
-        if next_train and num == next_train[0] and active:
+        mins = max(0, int((best - now_utc).total_seconds() / 60))
+
+        # ✅ First train = highlighted in active column only
+        if i == 0 and active:
             col.markdown(
-                f"<span style='background-color:rgba(200,200,200,0.3);padding:4px;border-radius:4px;'>{line}</span>",
+                f"""
+                <div style="
+                    display: inline-block;
+                    background-color: rgba(200,200,200,0.35);
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    line-height: 1.2;
+                    margin-bottom: 4px;
+                ">
+                    <span style="font-weight:600;">
+                        To {dest} (R {num}) — {text}
+                    </span><br>
+                    <span style="font-size:12px; color:gray;">
+                        Platform {platform} · departs in {mins} min
+                    </span>
+                </div>
+                """,
                 unsafe_allow_html=True
             )
+
+        # ✅ First train in non-active column → no grey background
+        elif i == 0:
+            col.markdown(
+                f"""
+                <div style="margin:0; padding:0; line-height:1.2;">
+                    <span style="font-weight:600;">
+                        To {dest} (R {num}) — {text}
+                    </span><br>
+                    <span style="font-size:12px; color:gray;">
+                        Platform {platform} · departs in {mins} min
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # ✅ All other trains (compact, one line)
         else:
-            col.write(line)
+            col.markdown(
+                f"""
+                <div style="margin:0; padding:0; line-height:1.2;">
+                    To {dest} (R {num}) — {text}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
 render_train_column(col1, trains_A_to_H, "Ainola → Helsinki", not focus_H_to_A)
 render_train_column(col2, trains_H_to_A, "Helsinki → Ainola", focus_H_to_A)
-
-# ----------------------------
-# NEXT TRAIN INFO
-# ----------------------------
-st.markdown("---")
-if next_train:
-    num, time_text, platform, rows, sched_time = next_train
-    mins = int((sched_time - now_utc).total_seconds() / 60)
-    dest = final_destination_name(rows, station_names)
-    target = AIN if focus_H_to_A else HKI
-    arr = next((r for r in rows if r["stationShortCode"] == target and r["type"] == "ARRIVAL"), None)
-    arr_time = format_hki(parse_time(arr["scheduledTime"])) if arr else "—"
-
-    st.subheader(f"⬇ Next train ({focus_label})")
-    st.markdown(
-        f"<span style='background-color: rgba(200,200,200,0.3); "
-        f"padding:6px 8px; border-radius:6px; display:inline-block;'>"
-        f"<b>To {dest} (R {num})</b> — Departs {time_text} "
-        f"<i>(in {mins} min)</i> | Platform: {platform}"
-        f"</span>",
-        unsafe_allow_html=True
-    )
-    st.write(f"Arrives at {station_names[target]}: {arr_time}")
-else:
-    st.info("No upcoming trains.")
 
 # ----------------------------
 # ROAD CONDITIONS / WARNINGS
@@ -255,7 +271,20 @@ else:
         for road, desc, cond in hazardous:
             st.write(f"**Road {road} – {desc}** | {cond}")
     else:
-        st.success("✅ No hazardous conditions.")
+        st.markdown(
+            """
+            <div style="
+                display: inline-block;
+                background-color: rgba(220, 255, 220, 0.7);
+                padding: 4px 8px;
+                border-radius: 6px;
+                font-size: 14px;
+            ">
+                ✅ No hazardous conditions.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     # ✅ Use formatted roadworks
     st.subheader("👷 Roadworks Nearby")
@@ -264,7 +293,6 @@ else:
     if roadworks:
         for rw in roadworks:
             st.write(f"• **Road: {rw['road']} in {rw['municipality']}**")
-            st.write(f"  🕒 Start: {rw['start']}")
     else:
         st.success("✅ No active roadworks near Ainola.")
 
