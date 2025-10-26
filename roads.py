@@ -115,10 +115,15 @@ def fetch_warnings():
 
     for feature in data.get("features", []):
         props = feature.get("properties", {})
-        geom = feature.get("geometry", {})
+        geom = feature.get("geometry")
+        if not geom:
+            continue  # Skip warnings without geometry
 
         coords = geom.get("coordinates", None)
         lon, lat = extract_lon_lat(coords)
+
+        if lon is None or lat is None:
+            continue  # Skip if no valid coordinates
 
         if lon is None or lat is None:
             continue
