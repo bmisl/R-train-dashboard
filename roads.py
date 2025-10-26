@@ -125,9 +125,6 @@ def fetch_warnings():
         if lon is None or lat is None:
             continue  # Skip if no valid coordinates
 
-        if lon is None or lat is None:
-            continue
-
         # Keep only warnings in Ainola/Helsinki region
         if X_MIN <= lon <= X_MAX and Y_MIN <= lat <= Y_MAX:
             out.append({"props": props, "lon": lon, "lat": lat})
