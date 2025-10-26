@@ -115,19 +115,27 @@ def fetch_warnings():
 
     for feature in data.get("features", []):
         props = feature.get("properties", {})
-        geom = feature.get("geometry")
+        geom = feature.get("geometry")  # geometry might be None or missing
+
+        # Skip if no geometry exists
         if not geom:
-            continue  # Skip warnings without geometry
+            continue
 
         coords = geom.get("coordinates", None)
         lon, lat = extract_lon_lat(coords)
 
+        # Only accept valid coordinates
         if lon is None or lat is None:
-            continue  # Skip if no valid coordinates
+            continue
 
-        # Keep only warnings in Ainola/Helsinki region
+        # Only include if inside bounding box
         if X_MIN <= lon <= X_MAX and Y_MIN <= lat <= Y_MAX:
-            out.append({"props": props, "lon": lon, "lat": lat})
+            out.append({
+                "props": props,
+                "lon": lon,
+                "lat": lat
+            })
+
     return out
 
 # ----------------------------
