@@ -1,0 +1,122 @@
+{
+  "BOUNDING_BOX": {
+    "X_MIN": 24.8,
+    "Y_MIN": 60.3,
+    "X_MAX": 25.5,
+    "Y_MAX": 60.7
+  },
+  "ROADS_OF_INTEREST": [
+    4,
+    140,
+    145,
+    146,
+    11609
+  ],
+  "TMS_STATIONS": [
+    20021,
+    20024,
+    20025,
+    20026,
+    20027,
+    23004,
+    23005,
+    23008,
+    23009,
+    23099,
+    23108,
+    23110,
+    23127,
+    23130,
+    23133,
+    23136,
+    23137,
+    23141,
+    23178,
+    23998
+  ],
+  "RWIS_STATIONS": [
+    1005,
+    1009,
+    1018,
+    1020,
+    1036,
+    1041,
+    1042,
+    1054,
+    1116,
+    1117,
+    1183,
+    15038,
+    19956,
+    19957,
+    19958,
+    19959,
+    19960,
+    19961,
+    19962,
+    19963,
+    19964,
+    19965,
+    19966
+  ],
+  "CAMERA_STATIONS": [
+    "C01508",
+    "C01509",
+    "C01532",
+    "C01533",
+    "C01652",
+    "C01653",
+    "C01655",
+    "C01656",
+    "C01657",
+    "C01658",
+    "C01702",
+    "C01713",
+    "C01715",
+    "C01716",
+    "C01955"
+  ],
+  "TRAIN_LINE": "R",
+  "TRAIN_STOPS": [
+    "HKI",
+    "PSL",
+    "TKL",
+    "KE",
+    "AIN",
+    "JP",
+    "SAU",
+    "JK",
+    "HY",
+    "RI",
+    "TPE"
+  ],
+  "STATIONS": {
+    "HKI": "Helsinki",
+    "PSL": "Pasila",
+    "TKL": "Tikkurila",
+    "KE": "Kerava",
+    "AIN": "Ainola",
+    "JP": "Järvenpää",
+    "SAU": "Saunakallio",
+    "JK": "Jokela",
+    "HY": "Hyvinkää",
+    "RI": "Riihimäki",
+    "TPE": "Tampere"
+  },
+  "HOME_STATIONS": {
+    "origin": "AIN",
+    "destination": "HKI"
+  },
+  "PAST_MINUTES": 0,
+  "FUTURE_MINUTES": 180,
+  "AINOLA_COORDS": {
+    "lat": 60.4553,
+    "lon": 25.0984,
+    "tooltip": "Ainola Parking"
+  },
+  "HOME_COORDS": {
+    "lat": 60.4446,
+    "lon": 25.2428,
+    "tooltip": "Close to home"
+  }
+}

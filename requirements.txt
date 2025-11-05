@@ -1,0 +1,14 @@
+# Core app framework
+streamlit>=1.32
+streamlit-autorefresh
+
+# Data & API
+requests
+pandas
+pytz
+
+# Map visualization
+folium
+
+# Optional utilities (used indirectly by pandas/folium)
+branca

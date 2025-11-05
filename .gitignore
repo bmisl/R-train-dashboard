@@ -1,0 +1,30 @@
+# Ignore Python cache and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+build/
+dist/
+*.egg-info/
+
+# Ignore virtual environments
+.env/
+venv/
+.venv/
+
+# Ignore local data, logs, and temporary output
+radar_images/
+data/
+logs/
+tmp/
+*.log
+*.csv
+*.sqlite
+*.db
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore VS Code workspace settings (optional)
+.vscode/
