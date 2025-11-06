@@ -15,7 +15,7 @@ Behavior:
 """
 
 import streamlit as st
-from datetime import datetime, timezone
+from datetime import datetime
 
 # ----------------------------
 # 1) PAGE CONFIG
@@ -56,6 +56,20 @@ st.markdown(
             box-shadow: 0 0 3px rgba(0,0,0,0.1);
             height: 100%;
         }
+        .metric-line {
+            display: flex;
+            align-items: center;
+            gap: 0.5em;
+            font-size: 0.95em;
+            margin: 0.25em 0;
+        }
+        .metric-icon {
+            font-size: 1.25em;
+            width: 1.6em;
+        }
+        .metric-label {
+            font-weight: 600;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -67,48 +81,78 @@ st.title("🚆 Ainola Commute Dashboard")
 # 3) WEATHER SUMMARY (TOP)
 # ----------------------------
 try:
-    from weather import weather_at, set_config
+    from weather import weather_metrics, set_config
 
-    def safe_weather_at(time_str, place):
-        """Call weather_at() safely, ensuring proper config and readable output."""
+    def safe_weather_metrics(time_str, place):
+        """Fetch metrics for a place/time combo, returning (metrics, error)."""
         try:
             set_config(place=place, forecast_hours=48)
-            result = weather_at(time_str)
-            # Ensure the output is a string (handle tuple unpacking errors internally)
-            if isinstance(result, (list, tuple)):
-                return "\n".join(map(str, result))
-            return str(result)
+            metrics, error = weather_metrics(time_str)
+            if error:
+                return None, error
+            return metrics, None
         except Exception as e:
-            return f"⚠️ {place}: {e}"
+            return None, f"❌ {e}"
 
-    places = [
-        ("Paippinen", "Paippinen"),
-        ("Kyrölä", "Ainola"),
-        ("Helsinki", "Helsinki"),
-    ]
-
-    cols = st.columns(3)
-    timestamp = datetime.now(timezone.utc).strftime("%H:%M UTC")
-
-    for idx, (place, display_name) in enumerate(places):
-        with cols[idx]:
-            morning = safe_weather_at("08:00", place)
-            afternoon = safe_weather_at("16:00", place)
-            st.markdown(
+    def render_weather_card(column, title, place, time_str):
+        metrics, error = safe_weather_metrics(time_str, place)
+        if error:
+            column.markdown(
                 f"""
                 <div class="weather-box">
-                <strong>🌅 {display_name} 08:00</strong><br>
-                {morning.replace('\n', '<br>')}
-                <hr style="border:none;border-top:1px solid #ccc;margin:0.5em 0;">
-                <strong>🌇 {display_name} 16:00</strong><br>
-                {afternoon.replace('\n', '<br>')}
+                    <strong>{title}</strong>
+                    <div style="margin-top:0.4em;">{error}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+            return
 
+        rain_mm = metrics["rain_mm"]
+        temp_c = metrics["temperature_c"]
+        wind_ms = metrics["wind_ms"]
+
+        if rain_mm >= 1.0:
+            rain_icon = "☂️"
+        elif rain_mm >= 0.1:
+            rain_icon = "🌦️"
+        else:
+            rain_icon = "☀️"
+
+        temp_icon = "❄️" if temp_c < 0 else "🌡️"
+        wind_icon = "💨" if wind_ms >= 5 else "🍃"
+
+        metric_lines = [
+            (rain_icon, "Rain", f"{rain_mm:.1f} mm/h"),
+            (temp_icon, "Temperature", f"{temp_c:.1f} °C"),
+            (wind_icon, "Wind", f"{wind_ms:.1f} m/s"),
+        ]
+
+        lines_html = "".join(
+            f"<div class='metric-line'><span class='metric-icon'>{icon}</span>"
+            f"<span class='metric-label'>{label}:</span> {value}</div>"
+            for icon, label, value in metric_lines
+        )
+
+        column.markdown(
+            f"""
+            <div class="weather-box">
+                <strong>{title}</strong>
+                <div style="margin-top:0.4em;">
+                    {lines_html}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    cols = st.columns(2)
+    render_weather_card(cols[0], "🌅 Järvenpää 08:00", "Järvenpää", "08:00")
+    render_weather_card(cols[1], "🌇 Helsinki 16:00", "Helsinki", "16:00")
+
+    timestamp = datetime.now().strftime("%H:%M")
     st.markdown(
-        f"<p style='font-size:0.85em;color:gray;text-align:center;'>Updated {timestamp}</p>",
+        f"<p style='font-size:0.85em;color:gray;text-align:center;'>Updated at {timestamp}</p>",
         unsafe_allow_html=True,
     )
 
