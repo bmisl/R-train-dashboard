@@ -179,33 +179,55 @@ def wind():
 # -----------------------------------
 # WEATHER AT SPECIFIC TIME
 # -----------------------------------
-def weather_at(time_str: str):
-    """Return compact weather summary for configured location near given time."""
+def _collect_weather_metrics(time_str: str):
+    """Return forecast metrics (rain, temperature, wind) near the given time."""
     try:
         target_time = _parse_time_string(time_str)
     except ValueError:
-        return f"❌ Invalid time format '{time_str}'"
+        return None, f"❌ Invalid time format '{time_str}'"
 
     now = datetime.datetime.now()
     max_time = now + datetime.timedelta(hours=_config["forecast_hours"])
     if target_time > max_time:
-        return f"⚠️ Requested time beyond forecast range ({_config['forecast_hours']}h)"
+        return None, f"⚠️ Requested time beyond forecast range ({_config['forecast_hours']}h)"
 
     rain_data, _, err_rain = _fetch_forecast("precipitation_amount")
     temp_data, _, err_temp = _fetch_forecast("temperature")
     wind_data, _, err_wind = _fetch_forecast("windspeedms")
 
     if err_rain or err_temp or err_wind:
-        return "❌ Failed to fetch forecast data"
+        return None, "❌ Failed to fetch forecast data"
 
     rf = _find_closest_forecast(rain_data, target_time)
     tf = _find_closest_forecast(temp_data, target_time)
     wf = _find_closest_forecast(wind_data, target_time)
 
     if not (rf and tf and wf):
-        return "📭 No forecast available for that time."
+        return None, "📭 No forecast available for that time."
 
-    rain_mm, temp_c, wind_ms = rf[1], tf[1], wf[1]
+    metrics = {
+        "target_time": target_time,
+        "rain_mm": rf[1],
+        "temperature_c": tf[1],
+        "wind_ms": wf[1],
+    }
+    return metrics, None
+
+
+def weather_metrics(time_str: str):
+    """Expose raw weather metrics for external callers."""
+    return _collect_weather_metrics(time_str)
+
+
+def weather_at(time_str: str):
+    """Return compact weather summary for configured location near given time."""
+    metrics, error = _collect_weather_metrics(time_str)
+    if error:
+        return error
+
+    rain_mm = metrics["rain_mm"]
+    temp_c = metrics["temperature_c"]
+    wind_ms = metrics["wind_ms"]
 
     # Rain icon
     if rain_mm < 0.1:

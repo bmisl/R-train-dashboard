@@ -199,10 +199,15 @@ for ws in fetch_weather_stations():
 
 # 📷 Cameras
 for cam in fetch_camera_stations():
-    img_html = (
-        f"<img src='{cam['images'][0]}' width='220'><br><small>{len(cam['images'])} view(s)</small>"
-        if cam["images"] else "<i>No image available</i>"
-    )
+    if cam["images"]:
+        images_markup = "".join(
+            f"<img src='{url}' width='220' style='display:block;margin-bottom:4px;'>"
+            for url in cam["images"]
+        )
+        img_html = f"{images_markup}<small>{len(cam['images'])} view(s)</small>"
+    else:
+        img_html = "<i>No image available</i>"
+
     tooltip_html = f"📷 <b>{cam['name']}</b><br>{img_html}"
     folium.Marker(
         [cam["lat"], cam["lon"]],
