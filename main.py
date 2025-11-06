@@ -50,25 +50,42 @@ st.markdown(
         }
         .weather-box {
             background-color: #eef6ff;
-            padding: 0.6em 1em;
+            padding: 0.75em 1.1em 0.9em;
             border-radius: 0.8em;
             margin-bottom: 0.4em;
             box-shadow: 0 0 3px rgba(0,0,0,0.1);
             height: 100%;
         }
-        .metric-line {
+        .weather-title {
+            font-weight: 700;
+            font-size: 1.05em;
+            text-align: center;
+        }
+        .metric-row {
+            margin-top: 0.6em;
             display: flex;
+            justify-content: space-between;
+            gap: 0.8em;
+        }
+        .metric-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 0.5em;
-            font-size: 0.95em;
-            margin: 0.25em 0;
+            text-align: center;
+            font-size: 0.9em;
         }
         .metric-icon {
-            font-size: 1.25em;
-            width: 1.6em;
+            font-size: 1.6em;
+            margin-bottom: 0.2em;
         }
         .metric-label {
             font-weight: 600;
+            margin-bottom: 0.05em;
+        }
+        .metric-value {
+            font-size: 0.85em;
+            color: #304562;
         }
     </style>
     """,
@@ -122,24 +139,29 @@ try:
         temp_icon = "❄️" if temp_c < 0 else "🌡️"
         wind_icon = "💨" if wind_ms >= 5 else "🍃"
 
-        metric_lines = [
+        metric_rows = [
             (rain_icon, "Rain", f"{rain_mm:.1f} mm/h"),
             (temp_icon, "Temperature", f"{temp_c:.1f} °C"),
             (wind_icon, "Wind", f"{wind_ms:.1f} m/s"),
         ]
 
-        lines_html = "".join(
-            f"<div class='metric-line'><span class='metric-icon'>{icon}</span>"
-            f"<span class='metric-label'>{label}:</span> {value}</div>"
-            for icon, label, value in metric_lines
+        metrics_html = "".join(
+            """
+            <div class='metric-item'>
+                <div class='metric-icon'>{icon}</div>
+                <div class='metric-label'>{label}</div>
+                <div class='metric-value'>{value}</div>
+            </div>
+            """.format(icon=icon, label=label, value=value)
+            for icon, label, value in metric_rows
         )
 
         column.markdown(
             f"""
             <div class="weather-box">
-                <strong>{title}</strong>
-                <div style="margin-top:0.4em;">
-                    {lines_html}
+                <div class="weather-title">{title}</div>
+                <div class="metric-row">
+                    {metrics_html}
                 </div>
             </div>
             """,
