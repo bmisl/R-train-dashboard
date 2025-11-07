@@ -8,6 +8,7 @@ Usage examples:
     py weather.py -place Paippinen -time 08:00      (forecast for Paippinen at 8:00)
     py weather.py                                   (default; Helsinki, next 24h)
     py weather.py -place Kyrölä -hours 48           (forecast for Kyrölä next 48h)
+    py weather.py -place "Södra Paipis" -time "tomorrow 14:30" (forecast for Södra Paipis tomorrow at 14:30)
 """
 
 import argparse
