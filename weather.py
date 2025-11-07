@@ -126,11 +126,11 @@ def _parse_time_string(time_str):
     return target
 
 
-def _find_closest_forecast(forecasts, target_time):
+def _find_closest_index(forecasts, target_time):
     if not forecasts:
         return None
     target_utc = target_time.astimezone(datetime.UTC)
-    return min(forecasts, key=lambda x: abs(x[0] - target_utc))
+    return min(range(len(forecasts)), key=lambda i: abs(forecasts[i][0] - target_utc))
 
 
 # -----------------------------------
@@ -143,11 +143,28 @@ def rain():
     if not forecasts:
         return "📭 No rain data."
 
-    rain_events = [(t, v) for t, v in forecasts if v > 0.1]
+    rain_intensity = []
+    previous_amount = None
+    for timestamp, amount in forecasts:
+        if previous_amount is None:
+            rate = max(amount, 0.0)
+        else:
+            rate = max(amount - previous_amount, 0.0)
+        rain_intensity.append((timestamp, rate))
+        previous_amount = amount
+
+    rain_events = [(t, rate) for t, rate in rain_intensity if rate > 0.1]
     if rain_events:
         first_rain = rain_events[0]
         t_local = first_rain[0].astimezone().strftime("%a %H:%M")
-        return f"🌧️ Rain expected {t_local} ({first_rain[1]:.1f} mm/h)."
+        rate = first_rain[1]
+        if rate >= 5.0:
+            icon = "⛈️"
+        elif rate >= 1.0:
+            icon = "🌧️"
+        else:
+            icon = "🌦️"
+        return f"{icon} Rain expected {t_local} ({rate:.1f} mm/h)."
     else:
         return "☀️ No rain forecast."
 
@@ -198,18 +215,25 @@ def _collect_weather_metrics(time_str: str):
     if err_rain or err_temp or err_wind:
         return None, "❌ Failed to fetch forecast data"
 
-    rf = _find_closest_forecast(rain_data, target_time)
-    tf = _find_closest_forecast(temp_data, target_time)
-    wf = _find_closest_forecast(wind_data, target_time)
+    rain_idx = _find_closest_index(rain_data, target_time)
+    temp_idx = _find_closest_index(temp_data, target_time)
+    wind_idx = _find_closest_index(wind_data, target_time)
 
-    if not (rf and tf and wf):
+    if any(idx is None for idx in (rain_idx, temp_idx, wind_idx)):
         return None, "📭 No forecast available for that time."
+
+    rain_amount = rain_data[rain_idx][1]
+    if rain_idx > 0:
+        prev_amount = rain_data[rain_idx - 1][1]
+        rain_rate = max(rain_amount - prev_amount, 0.0)
+    else:
+        rain_rate = max(rain_amount, 0.0)
 
     metrics = {
         "target_time": target_time,
-        "rain_mm": rf[1],
-        "temperature_c": tf[1],
-        "wind_ms": wf[1],
+        "rain_mm": rain_rate,
+        "temperature_c": temp_data[temp_idx][1],
+        "wind_ms": wind_data[wind_idx][1],
     }
     return metrics, None
 
