@@ -25,6 +25,7 @@ import time
 import json
 import os
 import re
+import math
 
 # ----------------------------
 # 2) CONFIGURATION
@@ -126,6 +127,19 @@ def fetch_road_forecasts():
     if forecast_data is None:
         return {}, geometry
 
+    def first_valid_float(values):
+        for value in values:
+            if value is None:
+                continue
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isnan(number):
+                continue
+            return number
+        return None
+
     forecasts = {}
     for section in forecast_data.get("forecastSections", []):
         sid = section.get("id")
@@ -138,11 +152,34 @@ def fetch_road_forecasts():
             or current.get("forecastConditionReason", {}).get("roadCondition")
             or "UNKNOWN"
         )
+
+        reason = current.get("forecastConditionReason") or {}
+        water_mm = first_valid_float(
+            [
+                current.get("waterLayerThickness"),
+                current.get("waterOnRoad"),
+                current.get("waterLayerThicknessLeft"),
+                current.get("waterLayerThicknessRight"),
+                reason.get("waterLayerThickness"),
+                reason.get("waterOnRoad"),
+            ]
+        )
+        snow_mm = first_valid_float(
+            [
+                current.get("snowLayerThickness"),
+                current.get("snowOnRoad"),
+                reason.get("snowLayerThickness"),
+                reason.get("snowOnRoad"),
+            ]
+        )
+
         forecasts[sid] = {
             "cond": cond,
             "roadTemp": current.get("roadTemperature"),
             "airTemp": current.get("temperature"),
             "time": current.get("time"),
+            "waterOnRoad": water_mm,
+            "snowOnRoad": snow_mm,
         }
     return forecasts, geometry
 

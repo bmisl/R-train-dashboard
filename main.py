@@ -131,42 +131,45 @@ try:
 
         if rain_mm >= 1.0:
             rain_icon = "☂️"
+            rain_label = "Rain"
+            rain_value = f"{rain_mm:.1f} mm/h"
         elif rain_mm >= 0.1:
             rain_icon = "🌦️"
+            rain_label = "Rain"
+            rain_value = f"{rain_mm:.1f} mm/h"
         else:
             rain_icon = "☀️"
+            rain_label = "Dry"
+            rain_value = "0.0 mm/h"
 
         temp_icon = "❄️" if temp_c < 0 else "🌡️"
         wind_icon = "💨" if wind_ms >= 5 else "🍃"
 
         metric_rows = [
-            (rain_icon, "Rain", f"{rain_mm:.1f} mm/h"),
+            (rain_icon, rain_label, rain_value),
             (temp_icon, "Temperature", f"{temp_c:.1f} °C"),
             (wind_icon, "Wind", f"{wind_ms:.1f} m/s"),
         ]
 
         metrics_html = "".join(
-            """
-            <div class='metric-item'>
-                <div class='metric-icon'>{icon}</div>
-                <div class='metric-label'>{label}</div>
-                <div class='metric-value'>{value}</div>
-            </div>
-            """.format(icon=icon, label=label, value=value)
+            f"<div class='metric-item'>"
+            f"<div class='metric-icon'>{icon}</div>"
+            f"<div class='metric-label'>{label}</div>"
+            f"<div class='metric-value'>{value}</div>"
+            "</div>"
             for icon, label, value in metric_rows
         )
 
-        column.markdown(
-            f"""
-            <div class="weather-box">
-                <div class="weather-title">{title}</div>
-                <div class="metric-row">
-                    {metrics_html}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        card_html = (
+            "<div class=\"weather-box\">"
+            f"<div class=\"weather-title\">{title}</div>"
+            "<div class=\"metric-row\">"
+            f"{metrics_html}"
+            "</div>"
+            "</div>"
         )
+
+        column.markdown(card_html, unsafe_allow_html=True)
 
     cols = st.columns(2)
     render_weather_card(cols[0], "🌅 Järvenpää 08:00", "Järvenpää", "08:00")
