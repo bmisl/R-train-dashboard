@@ -25,6 +25,14 @@ DEFAULT_FORECAST_HOURS = 24
 STORED_QUERY = "fmi::forecast::harmonie::surface::point::multipointcoverage"
 STEP_MIN = 60
 
+_PARAMETER_MAP = {
+    "precipitation_amount": "PrecipitationAmount",
+    "precipitation": "PrecipitationAmount",
+    "temperature": "Temperature",
+    "windspeedms": "WindSpeedMS",
+    "wind_speed": "WindSpeedMS",
+}
+
 _NS = {
     "wfs": "http://www.opengis.net/wfs/2.0",
     "om": "http://www.opengis.net/om/2.0",
@@ -58,12 +66,13 @@ def _fetch_forecast(parameter):
     starttime = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     endtime = (now + datetime.timedelta(hours=_config["forecast_hours"])).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    fmi_parameter = _PARAMETER_MAP.get(parameter.lower(), parameter)
     url = (
         "https://opendata.fmi.fi/wfs?"
         f"service=WFS&version=2.0.0&request=getFeature"
         f"&storedquery_id={STORED_QUERY}"
         f"&place={_config['place']}"
-        f"&parameters={parameter}"
+        f"&parameters={fmi_parameter}"
         f"&starttime={starttime}"
         f"&endtime={endtime}"
         f"&timestep={STEP_MIN}"
@@ -145,14 +154,9 @@ def rain():
         return "📭 No rain data."
 
     rain_intensity = []
-    previous_amount = None
     for timestamp, amount in forecasts:
-        if previous_amount is None:
-            rate = max(amount, 0.0)
-        else:
-            rate = max(amount - previous_amount, 0.0)
+        rate = max(amount, 0.0)
         rain_intensity.append((timestamp, rate))
-        previous_amount = amount
 
     rain_events = [(t, rate) for t, rate in rain_intensity if rate > 0.1]
     if rain_events:
@@ -223,12 +227,7 @@ def _collect_weather_metrics(time_str: str):
     if any(idx is None for idx in (rain_idx, temp_idx, wind_idx)):
         return None, "📭 No forecast available for that time."
 
-    rain_amount = rain_data[rain_idx][1]
-    if rain_idx > 0:
-        prev_amount = rain_data[rain_idx - 1][1]
-        rain_rate = max(rain_amount - prev_amount, 0.0)
-    else:
-        rain_rate = max(rain_amount, 0.0)
+    rain_rate = max(rain_data[rain_idx][1], 0.0)
 
     metrics = {
         "target_time": target_time,
