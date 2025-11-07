@@ -121,6 +121,8 @@ for feat in geometry:
     cond = cond_data.get("cond", "UNKNOWN")
     air_t = cond_data.get("airTemp", "?")
     road_t = cond_data.get("roadTemp", "?")
+    water_mm = cond_data.get("waterOnRoad")
+    snow_mm = cond_data.get("snowOnRoad")
     ftime = cond_data.get("time", "")
 
     ftime_fmt = ""
@@ -138,9 +140,15 @@ for feat in geometry:
         f"{desc}<br>"
         f"<b>Condition:</b> {cond}<br>"
         f"<b>Air T:</b> {air_t} °C<br>"
-        f"<b>Road T:</b> {road_t} °C<br>"
-        f"<b>Forecast:</b> {ftime_fmt}"
+        f"<b>Road T:</b> {road_t} °C"
     )
+
+    if snow_mm is not None:
+        tooltip_html += f"<br><b>Snow on road:</b> {snow_mm:.1f} mm"
+    if water_mm is not None:
+        tooltip_html += f"<br><b>Water on road:</b> {water_mm:.1f} mm"
+
+    tooltip_html += f"<br><b>Forecast:</b> {ftime_fmt}"
 
     for segment in geom.get("coordinates", []):
         path = [(lat, lon) for lon, lat, *_ in segment]
@@ -200,11 +208,22 @@ for ws in fetch_weather_stations():
 # 📷 Cameras
 for cam in fetch_camera_stations():
     if cam["images"]:
-        images_markup = "".join(
-            f"<img src='{url}' width='220' style='display:block;margin-bottom:4px;'>"
+        image_items = "".join(
+            f"<div style='break-inside:avoid;'>"
+            f"<img src='{url}' style='width:100%;display:block;border-radius:4px;'>"
+            "</div>"
             for url in cam["images"]
         )
-        img_html = f"{images_markup}<small>{len(cam['images'])} view(s)</small>"
+        images_markup = (
+            "<div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));"
+            "gap:4px;max-width:460px;\">"
+            f"{image_items}"
+            "</div>"
+        )
+        img_html = (
+            f"{images_markup}"
+            f"<small style='display:block;margin-top:4px;'>{len(cam['images'])} view(s)</small>"
+        )
     else:
         img_html = "<i>No image available</i>"
 
