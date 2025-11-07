@@ -49,23 +49,23 @@ st.markdown(
             padding-bottom: 0rem !important;
         }
         .weather-box {
-            background-color: #eef6ff;
-            padding: 0.75em 1.1em 0.9em;
-            border-radius: 0.8em;
-            margin-bottom: 0.4em;
-            box-shadow: 0 0 3px rgba(0,0,0,0.1);
+            background: #ffffff;
+            padding: 0.55em 0.7em 0.65em;
+            border-radius: 0.6em;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            margin-bottom: 0.25em;
             height: 100%;
         }
         .weather-title {
             font-weight: 700;
-            font-size: 1.05em;
+            font-size: 0.95em;
             text-align: center;
+            margin-bottom: 0.35em;
         }
         .metric-row {
-            margin-top: 0.6em;
             display: flex;
             justify-content: space-between;
-            gap: 0.8em;
+            gap: 0.4em;
         }
         .metric-item {
             flex: 1;
@@ -73,18 +73,18 @@ st.markdown(
             flex-direction: column;
             align-items: center;
             text-align: center;
-            font-size: 0.9em;
+            font-size: 0.82em;
         }
         .metric-icon {
-            font-size: 1.6em;
-            margin-bottom: 0.2em;
+            font-size: 1.3em;
+            margin-bottom: 0.15em;
         }
         .metric-label {
             font-weight: 600;
             margin-bottom: 0.05em;
         }
         .metric-value {
-            font-size: 0.85em;
+            font-size: 0.78em;
             color: #304562;
         }
     </style>
