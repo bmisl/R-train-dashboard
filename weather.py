@@ -297,9 +297,10 @@ def main():
         print(weather_at(args.time))
     else:
         print(f"📍 Forecast for {args.place} (next {args.hours}h):")
-        print(rain())
-        print(temperature())
-        print(wind())
+        rain_summary = rain()
+        temp_summary = temperature()
+        wind_summary = wind()
+        print(f"{rain_summary} | {temp_summary} | {wind_summary}")
 
 
 if __name__ == "__main__":
