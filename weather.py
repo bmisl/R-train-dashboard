@@ -14,14 +14,33 @@ Usage examples:
 import argparse
 import datetime
 import math
+from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
+
 import requests
 import xml.etree.ElementTree as ET
+
+try:
+    from astral import LocationInfo  # type: ignore
+except ImportError:  # pragma: no cover - Astral optional
+    LocationInfo = None
+
+try:  # Astral 2.x exposes AstralError via astral; 3.x removed it
+    from astral import AstralError  # type: ignore
+except ImportError:  # pragma: no cover - fallback for versions without AstralError
+    AstralError = Exception  # type: ignore
+
+from astral.sun import sun
 
 # -----------------------------------
 # DEFAULT CONFIGURATION
 # -----------------------------------
 DEFAULT_PLACE = "Helsinki"
 DEFAULT_FORECAST_HOURS = 24
+try:
+    DEFAULT_TIMEZONE = ZoneInfo("Europe/Helsinki")
+except Exception:  # pragma: no cover - fallback for systems without timezone database
+    DEFAULT_TIMEZONE = datetime.timezone.utc
 STORED_QUERY = "fmi::forecast::harmonie::surface::point::multipointcoverage"
 STEP_MIN = 60
 
@@ -31,6 +50,37 @@ _PARAMETER_MAP = {
     "temperature": "Temperature",
     "windspeedms": "WindSpeedMS",
     "wind_speed": "WindSpeedMS",
+    "weather_symbol3": "WeatherSymbol3",
+}
+
+ICON_BASE_URL = "https://cdn.fmi.fi/symbol-images/smartsymbol/v3/p"
+
+WEATHER_SYMBOL_DESCRIPTIONS: Dict[int, str] = {
+    1: "Clear sky",
+    2: "Partly cloudy",
+    3: "Cloudy",
+    21: "Light rain",
+    22: "Moderate rain",
+    23: "Heavy rain",
+    31: "Light snowfall",
+    32: "Moderate snowfall",
+    33: "Heavy snowfall",
+    41: "Light rain showers",
+    42: "Rain showers",
+    43: "Heavy rain showers",
+    51: "Thunderstorm",
+    61: "Light sleet",
+    62: "Sleet",
+    63: "Heavy sleet",
+    71: "Light rain with thunder",
+    72: "Rain with thunder",
+    73: "Heavy rain with thunder",
+    81: "Light sleet with thunder",
+    82: "Sleet with thunder",
+    83: "Heavy sleet with thunder",
+    91: "Light snowfall with thunder",
+    92: "Snowfall with thunder",
+    93: "Heavy snowfall with thunder",
 }
 
 _NS = {
@@ -54,24 +104,27 @@ def set_config(place=None, forecast_hours=None):
     if place is not None:
         _config["place"] = place
     if forecast_hours is not None:
-        _config["forecast_hours"] = forecast_hours
+        _config["forecast_hours"] = max(1, forecast_hours)
 
 
 # -----------------------------------
 # CORE FORECAST FETCH
 # -----------------------------------
-def _fetch_forecast(parameter):
+def _fetch_forecast(parameter: str, *, place: Optional[str] = None,
+                    forecast_hours: Optional[int] = None):
     """Fetch forecast values and geolocation from FMI Open Data for a given parameter."""
     now = datetime.datetime.now(datetime.UTC)
+    place = place or _config["place"]
+    forecast_hours = forecast_hours or _config["forecast_hours"]
     starttime = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    endtime = (now + datetime.timedelta(hours=_config["forecast_hours"])).strftime("%Y-%m-%dT%H:%M:%SZ")
+    endtime = (now + datetime.timedelta(hours=forecast_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     fmi_parameter = _PARAMETER_MAP.get(parameter.lower(), parameter)
     url = (
         "https://opendata.fmi.fi/wfs?"
         f"service=WFS&version=2.0.0&request=getFeature"
         f"&storedquery_id={STORED_QUERY}"
-        f"&place={_config['place']}"
+        f"&place={place}"
         f"&parameters={fmi_parameter}"
         f"&starttime={starttime}"
         f"&endtime={endtime}"
@@ -98,15 +151,16 @@ def _fetch_forecast(parameter):
             location = (lat, lon)
 
     # Extract values
-    values = []
+    values: List[Optional[float]] = []
     for block in root.findall(".//omso:GridSeriesObservation//gml:doubleOrNilReasonTupleList", _NS):
         text = block.text.strip() if block.text else ""
         for v in text.split():
             try:
                 value = float(v)
                 if math.isnan(value):
-                    value = 0.0
-                values.append(value)
+                    values.append(None)
+                else:
+                    values.append(value)
             except ValueError:
                 continue
 
@@ -115,6 +169,205 @@ def _fetch_forecast(parameter):
 
     times = [now + datetime.timedelta(hours=i) for i in range(len(values))]
     return list(zip(times, values)), location, None
+
+
+# -----------------------------------
+# TIME & SUN HELPERS
+# -----------------------------------
+def _coerce_timezone(tz: Optional[ZoneInfo]) -> datetime.tzinfo:
+    if tz is not None:
+        return tz
+    return DEFAULT_TIMEZONE
+
+
+def _safe_astimezone(dt: datetime.datetime, tz: datetime.tzinfo) -> datetime.datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(tz)
+
+
+def _format_day_length(delta: Optional[datetime.timedelta]) -> Optional[str]:
+    if not delta:
+        return None
+    seconds = int(delta.total_seconds())
+    hours, remainder = divmod(seconds, 3600)
+    minutes = remainder // 60
+    return f"{hours} h {minutes:02d} min"
+
+
+def daylight_info(lat: float, lon: float, *, date: Optional[datetime.date] = None,
+                  tz: Optional[ZoneInfo] = None) -> Tuple[Optional[datetime.datetime],
+                                                         Optional[datetime.datetime],
+                                                         Optional[datetime.timedelta]]:
+    """Return (sunrise, sunset, day_length) for the given coordinate."""
+    tzinfo = _coerce_timezone(tz)
+    target_date = date or _safe_astimezone(datetime.datetime.now(datetime.UTC), tzinfo).date()
+
+    if LocationInfo is None:
+        return None, None, None
+
+    timezone_name = tzinfo.key if hasattr(tzinfo, "key") else "Europe/Helsinki"
+    location = LocationInfo(latitude=lat, longitude=lon, timezone=timezone_name)
+    try:
+        sun_events = sun(location.observer, date=target_date, tzinfo=tzinfo)
+    except AstralError:
+        return None, None, None
+
+    sunrise = sun_events.get("sunrise")
+    sunset = sun_events.get("sunset")
+    day_length = None
+    if sunrise and sunset:
+        day_length = sunset - sunrise
+    return sunrise, sunset, day_length
+
+
+def daylight_summary(lat: float, lon: float, *, date: Optional[datetime.date] = None,
+                     tz: Optional[ZoneInfo] = None) -> Dict[str, Optional[str]]:
+    tzinfo = _coerce_timezone(tz)
+    sunrise, sunset, length = daylight_info(lat, lon, date=date, tz=tzinfo)
+    return {
+        "sunrise": sunrise.strftime("%H:%M") if sunrise else None,
+        "sunset": sunset.strftime("%H:%M") if sunset else None,
+        "day_length": _format_day_length(length),
+        "sunrise_dt": sunrise,
+        "sunset_dt": sunset,
+    }
+
+
+def _weather_symbol_description(symbol: Optional[float]) -> str:
+    if symbol is None:
+        return "Unknown"
+    code = int(round(symbol))
+    return WEATHER_SYMBOL_DESCRIPTIONS.get(code, f"Weather symbol {code}")
+
+
+def _weather_symbol_icon(symbol: Optional[float], daylight: bool) -> Optional[str]:
+    if symbol is None:
+        return None
+    code = int(round(symbol))
+    icon_code = code if daylight else code + 100
+    return f"{ICON_BASE_URL}/{icon_code}.svg"
+
+
+def _value_at(
+    forecasts: List[Tuple[datetime.datetime, Optional[float]]],
+    target: datetime.datetime,
+) -> Optional[float]:
+    if not forecasts:
+        return None
+    idx = _find_closest_index(forecasts, target)
+    if idx is None:
+        return None
+    value = forecasts[idx][1]
+    if value is not None:
+        return value
+
+    # Fall back to nearest non-empty neighbour so minor gaps don't wipe data
+    max_radius = min(len(forecasts), 6)
+    for offset in range(1, max_radius):
+        lower = idx - offset
+        upper = idx + offset
+        if lower >= 0:
+            candidate = forecasts[lower][1]
+            if candidate is not None:
+                return candidate
+        if upper < len(forecasts):
+            candidate = forecasts[upper][1]
+            if candidate is not None:
+                return candidate
+    return None
+
+
+def interval_forecast(place: str, *, start_hour: int = 8, total_hours: int = 24,
+                      step_hours: int = 4, tz: Optional[ZoneInfo] = None,
+                      forecast_hours: int = 48) -> Tuple[Optional[Dict], Optional[str]]:
+    """Build structured forecast for a place over fixed intervals."""
+    if total_hours % step_hours != 0:
+        return None, "❌ total_hours must be divisible by step_hours"
+
+    tzinfo = _coerce_timezone(tz)
+    now_local = _safe_astimezone(datetime.datetime.now(datetime.UTC), tzinfo)
+    start_local = datetime.datetime.combine(
+        now_local.date(), datetime.time(hour=start_hour), tzinfo
+    )
+    if start_local <= now_local:
+        start_local += datetime.timedelta(days=1)
+
+    try:
+        padding = max(forecast_hours, total_hours + 4)
+        precip, location, err = _fetch_forecast(
+            "precipitation_amount", place=place, forecast_hours=padding
+        )
+        if err:
+            return None, err
+        temps, loc2, err = _fetch_forecast(
+            "temperature", place=place, forecast_hours=padding
+        )
+        if err:
+            return None, err
+        winds, loc3, err = _fetch_forecast(
+            "windspeedms", place=place, forecast_hours=padding
+        )
+        if err:
+            return None, err
+        symbols, loc4, err = _fetch_forecast(
+            "weather_symbol3", place=place, forecast_hours=padding
+        )
+        if err:
+            return None, err
+    except Exception as e:
+        return None, f"❌ Failed to fetch forecast: {e}"
+
+    location = loc4 or loc3 or loc2 or location
+    lat_lon = location if location else (None, None)
+
+    steps = total_hours // step_hours
+    intervals = []
+    daylight_cache: Dict[datetime.date, Dict[str, Optional[str]]] = {}
+
+    for i in range(steps):
+        interval_start = start_local + datetime.timedelta(hours=step_hours * i)
+        interval_end = interval_start + datetime.timedelta(hours=step_hours)
+
+        symbol_val = _value_at(symbols, interval_start)
+        temp_val = _value_at(temps, interval_start)
+        wind_val = _value_at(winds, interval_start)
+        rain_val = _value_at(precip, interval_start)
+
+        daylight_key = interval_start.date()
+        if daylight_key not in daylight_cache and all(lat_lon):
+            daylight_cache[daylight_key] = daylight_summary(
+                lat_lon[0], lat_lon[1], date=daylight_key, tz=tzinfo
+            )
+        daylight_info_for_day = daylight_cache.get(daylight_key, {})
+        sunrise_dt = daylight_info_for_day.get("sunrise_dt")
+        sunset_dt = daylight_info_for_day.get("sunset_dt")
+        is_daylight = False
+        if sunrise_dt and sunset_dt:
+            is_daylight = sunrise_dt <= interval_start < sunset_dt
+
+        intervals.append(
+            {
+                "label": f"{interval_start.strftime('%H:%M')}–{interval_end.strftime('%H:%M')}",
+                "start": interval_start,
+                "end": interval_end,
+                "temperature_c": temp_val,
+                "wind_ms": wind_val,
+                "precip_mm": max(rain_val, 0.0) if rain_val is not None else None,
+                "symbol_code": int(round(symbol_val)) if symbol_val is not None else None,
+                "symbol_description": _weather_symbol_description(symbol_val),
+                "icon_url": _weather_symbol_icon(symbol_val, is_daylight),
+                "is_daylight": is_daylight,
+            }
+        )
+
+    return {
+        "place": place,
+        "start": start_local,
+        "end": intervals[-1]["end"] if intervals else None,
+        "intervals": intervals,
+        "location": lat_lon,
+    }, None
 
 
 # -----------------------------------
@@ -147,7 +400,7 @@ def _find_closest_index(forecasts, target_time):
 # INDIVIDUAL FORECASTS
 # -----------------------------------
 def rain():
-    forecasts, location, error = _fetch_forecast("precipitation_amount")
+    forecasts, _, error = _fetch_forecast("precipitation_amount")
     if error:
         return error
     if not forecasts:
@@ -155,8 +408,13 @@ def rain():
 
     rain_intensity = []
     for timestamp, amount in forecasts:
+        if amount is None:
+            continue
         rate = max(amount, 0.0)
         rain_intensity.append((timestamp, rate))
+
+    if not rain_intensity:
+        return "📭 No rain data."
 
     rain_events = [(t, rate) for t, rate in rain_intensity if rate > 0.1]
     if rain_events:
@@ -181,9 +439,21 @@ def temperature():
     if not forecasts:
         return "📭 No temperature data."
 
-    current = forecasts[0][1]
-    vals = [v for _, v in forecasts]
-    return f"🌡️ Now: {current:.1f}°C | Range: {min(vals):.1f}°C – {max(vals):.1f}°C"
+    values: List[float] = []
+    current: Optional[float] = None
+    for _, reading in forecasts:
+        if reading is None:
+            continue
+        if current is None:
+            current = reading
+        values.append(reading)
+
+    if current is None or not values:
+        return "📭 No temperature data."
+
+    return (
+        f"🌡️ Now: {current:.1f}°C | Range: {min(values):.1f}°C – {max(values):.1f}°C"
+    )
 
 
 def wind():
@@ -193,9 +463,19 @@ def wind():
     if not forecasts:
         return "📭 No wind data."
 
-    current = forecasts[0][1]
-    vals = [v for _, v in forecasts]
-    return f"💨 Now: {current:.1f} m/s | Max: {max(vals):.1f} m/s"
+    values: List[float] = []
+    current: Optional[float] = None
+    for _, reading in forecasts:
+        if reading is None:
+            continue
+        if current is None:
+            current = reading
+        values.append(reading)
+
+    if current is None or not values:
+        return "📭 No wind data."
+
+    return f"💨 Now: {current:.1f} m/s | Max: {max(values):.1f} m/s"
 
 
 # -----------------------------------
@@ -220,20 +500,18 @@ def _collect_weather_metrics(time_str: str):
     if err_rain or err_temp or err_wind:
         return None, "❌ Failed to fetch forecast data"
 
-    rain_idx = _find_closest_index(rain_data, target_time)
-    temp_idx = _find_closest_index(temp_data, target_time)
-    wind_idx = _find_closest_index(wind_data, target_time)
+    rain_rate = _value_at(rain_data, target_time)
+    temp_val = _value_at(temp_data, target_time)
+    wind_val = _value_at(wind_data, target_time)
 
-    if any(idx is None for idx in (rain_idx, temp_idx, wind_idx)):
+    if any(v is None for v in (rain_rate, temp_val, wind_val)):
         return None, "📭 No forecast available for that time."
-
-    rain_rate = max(rain_data[rain_idx][1], 0.0)
 
     metrics = {
         "target_time": target_time,
-        "rain_mm": rain_rate,
-        "temperature_c": temp_data[temp_idx][1],
-        "wind_ms": wind_data[wind_idx][1],
+        "rain_mm": max(rain_rate, 0.0) if rain_rate is not None else None,
+        "temperature_c": temp_val,
+        "wind_ms": wind_val,
     }
     return metrics, None
 
@@ -291,12 +569,13 @@ def main():
                         help="Forecast range in hours (default: 24)")
     args = parser.parse_args()
 
-    set_config(place=args.place, forecast_hours=args.hours)
+    effective_hours = max(1, args.hours)
+    set_config(place=args.place, forecast_hours=effective_hours)
 
     if args.time:
         print(weather_at(args.time))
     else:
-        print(f"📍 Forecast for {args.place} (next {args.hours}h):")
+        print(f"📍 Forecast for {args.place} (next {effective_hours}h):")
         rain_summary = rain()
         temp_summary = temperature()
         wind_summary = wind()
