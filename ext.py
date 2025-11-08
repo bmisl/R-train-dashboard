@@ -47,14 +47,18 @@ st.markdown(
             min-width: 280px;
         }
         .train-embed {
-            height: 520px;
+            height: 210px;
             position: relative;
         }
         .train-embed iframe {
             width: 303%;
-            height: 1560px;
+            height: 640px;
             transform: scale(0.33);
             transform-origin: top left;
+        }
+        .narrow-frame {
+            max-width: 1000px;
+            margin: 0 auto;
         }
         @media (max-width: 900px) {
             .train-grid {
@@ -109,42 +113,42 @@ st.markdown(train_section_html, unsafe_allow_html=True)
 
 st.subheader("🌦️ Weather & Conditions")
 embeds = [
-    ("Paippinen Local Weather", "https://en.ilmatieteenlaitos.fi/local-weather/sipoo/paippinen", 900),
-    ("Weather Warnings", "https://en.ilmatieteenlaitos.fi/warnings", 900),
+    (
+        "Paippinen Local Weather",
+        "https://en.ilmatieteenlaitos.fi/local-weather/sipoo/paippinen",
+        900,
+        True,
+    ),
+    (
+        "Weather Warnings",
+        "https://en.ilmatieteenlaitos.fi/warnings",
+        900,
+        True,
+    ),
     (
         "Traffic Situation Map",
-        "https://liikennetilanne.fintraffic.fi/kartta/?x=3010000&y=9720000&z=5&checkedLayers=3,10",
-        0,
+        "https://liikennetilanne.fintraffic.fi/kartta/?lang=en&x=2791520.149538346&y=8496829.188520921&z=11&checkedLayers=1,3,10,11&basemap=streets-vector&iframe=true",
+        720,
+        False,
     ),
     (
         "Aurora & Space Weather (Nurmijärvi)",
         "https://www.ilmatieteenlaitos.fi/revontulet-ja-avaruussaa?station=NUR",
         900,
+        True,
     ),
 ]
 
-for title, url, height in embeds:
-    if title == "Traffic Situation Map":
-        st.markdown(
-            f"""
-            <div class="embed-wrapper">
-                <div class="embed-title">{title}</div>
-                <div class="embed-frame" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
-                    <div>This interactive map requires accepting cookies on the provider's site.</div>
-                    <a href="{url}" target="_blank" rel="noopener" style="align-self: flex-start; background: #0f766e; color: #ffffff; padding: 0.5rem 0.9rem; border-radius: 0.5rem; text-decoration: none; font-weight: 600;">Open traffic map in a new tab ↗</a>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        continue
-
+for title, url, height, narrow in embeds:
     resolved_url = ensure_main_fragment(url)
+    frame_classes = "embed-frame"
+    if narrow:
+        frame_classes += " narrow-frame"
     st.markdown(
         f"""
         <div class="embed-wrapper">
             <div class="embed-title">{title}</div>
-            <div class="embed-frame" style="height: {height}px;">
+            <div class="{frame_classes}" style="height: {height}px;">
                 <iframe src="{resolved_url}" loading="lazy" title="{title}"></iframe>
             </div>
         </div>
