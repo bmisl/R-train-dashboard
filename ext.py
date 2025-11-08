@@ -65,6 +65,9 @@ st.markdown(
             .train-grid {
                 flex-direction: column;
             }
+            .train-card {
+                flex: 1 1 auto;
+            }
         }
     </style>
     """,
