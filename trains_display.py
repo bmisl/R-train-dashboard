@@ -95,13 +95,24 @@ def format_row(dest_name, num, text, platform, mins_until=None,
     """
     main_text = f"To {dest_name} ({TRAIN_LINE} {num}) — {text}"
 
+    details = ""
+    if show_details:
+        platform_text = f"Platform {platform}"
+        if mins_until is not None:
+            platform_text += f" • departs in {mins_until} min"
+        details = (
+            "<br><span style='font-size:13px; opacity:0.8;'>"
+            f"{platform_text}"
+            "</span>"
+        )
+
     # Case 1: highlighted (focus column)
     if highlight_bg:
         return (
             "<div style='margin-bottom:4px;'>"
             "<span style='background-color:#e9e9e9; border-radius:4px; padding:1px 6px; display:inline-block;'>"
             f"<b>{main_text}</b>"
-            f"{'<br><span style=\"font-size:13px; opacity:0.8;\">Platform ' + str(platform) + (' • departs in ' + str(mins_until) + ' min' if mins_until is not None else '') + '</span>' if show_details else ''}"
+            f"{details}"
             "</span>"
             "</div>"
         )
@@ -111,7 +122,7 @@ def format_row(dest_name, num, text, platform, mins_until=None,
         return (
             "<div style='margin-bottom:4px;'>"
             f"<b>{main_text}</b>"
-            f"{'<br><span style=\"font-size:13px; opacity:0.8;\">Platform ' + str(platform) + (' • departs in ' + str(mins_until) + ' min' if mins_until is not None else '') + '</span>' if show_details else ''}"
+            f"{details}"
             "</div>"
         )
 
@@ -120,6 +131,7 @@ def format_row(dest_name, num, text, platform, mins_until=None,
         return (
             "<div style='margin-bottom:4px;'>"
             f"{main_text}"
+            f"{details}"
             "</div>"
         )
 
@@ -171,6 +183,20 @@ def render_trains_html():
             border-top: 1px solid #ccc;
             margin: 20px 0;
         }
+        .train-columns {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            align-items: start;
+        }
+        .train-columns > div {
+            min-width: 0;
+        }
+        @media (max-width: 520px) {
+            .train-columns {
+                gap: 12px;
+            }
+        }
     </style>
     </head>
     <body>
@@ -178,10 +204,10 @@ def render_trains_html():
 
     # --- SECTION 1: CURRENT TRAINS ---
     html.write("<h3>Next trains</h3>")
-    html.write("<div style='display:flex; gap:32px; align-items:flex-start;'>")
+    html.write("<div class='train-columns'>")
 
     # Left column (to city)
-    html.write("<div style='flex:1;'>")
+    html.write("<div>")
     html.write(f"<h4>{origin_name} → {dest_name}</h4>")
     if not to_city:
         html.write("<p><i>No upcoming trains.</i></p>")
@@ -198,7 +224,7 @@ def render_trains_html():
     html.write("</div>")  # end left column
 
     # Right column (to home)
-    html.write("<div style='flex:1;'>")
+    html.write("<div>")
     html.write(f"<h4>{dest_name} → {origin_name}</h4>")
     if not to_home:
         html.write("<p><i>No upcoming trains.</i></p>")
@@ -255,10 +281,10 @@ def render_trains_html():
     morning_filtered = filter_by_time(morning_trains, 7, 0)
     evening_filtered = filter_by_time(evening_trains, 15, 0)
     
-    html.write("<div style='display:flex; gap:32px; align-items:flex-start;'>")
+    html.write("<div class='train-columns'>")
     
     # Left: Morning commute (07:00)
-    html.write("<div style='flex:1;'>")
+    html.write("<div>")
     html.write(f"<h4 style='margin-top:0;'>{origin_name} → {dest_name}</h4>")
     if not morning_filtered:
         html.write("<p><i>No trains found.</i></p>")
@@ -271,7 +297,7 @@ def render_trains_html():
     html.write("</div>")
     
     # Right: Evening commute (15:00)
-    html.write("<div style='flex:1;'>")
+    html.write("<div>")
     html.write(f"<h4 style='margin-top:0;'>{dest_name} → {origin_name}</h4>")
     if not evening_filtered:
         html.write("<p><i>No trains found.</i></p>")
