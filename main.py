@@ -300,6 +300,33 @@ st.components.v1.iframe(
 # 7) FOOTER
 # ----------------------------
 st.markdown("<hr style='margin:0.4em 0;'>", unsafe_allow_html=True)
+st.subheader("🔗 External resources")
+st.markdown(
+    "Explore the detailed FMI local forecast for Paippinen and live Junalahdot departure boards.",
+    help="Embedded pages load from en.ilmatieteenlaitos.fi and junalahdot.fi.",
+)
+
+st.components.v1.iframe(
+    "https://en.ilmatieteenlaitos.fi/local-weather/sipoo/paippinen",
+    height=820,
+    scrolling=True,
+)
+
+train_cols = st.columns(2)
+with train_cols[0]:
+    st.components.v1.iframe(
+        "https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki",
+        height=520,
+        scrolling=True,
+    )
+with train_cols[1]:
+    st.components.v1.iframe(
+        "https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola",
+        height=520,
+        scrolling=True,
+    )
+
+st.markdown("<hr style='margin:0.4em 0;'>", unsafe_allow_html=True)
 st.caption(
     "Data from FMI and Digitraffic.fi — trains render immediately; "
     "roads and sensors load after. Roads map cached for 5 minutes. "
