@@ -14,7 +14,7 @@ Usage examples:
 import argparse
 import datetime
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from zoneinfo import ZoneInfo
 
 import requests
@@ -55,33 +55,118 @@ _PARAMETER_MAP = {
 
 ICON_BASE_URL = "https://cdn.fmi.fi/symbol-images/smartsymbol/v3/p"
 
-WEATHER_SYMBOL_DESCRIPTIONS: Dict[int, str] = {
-    1: "Clear sky",
-    2: "Partly cloudy",
-    3: "Cloudy",
-    21: "Light rain",
-    22: "Moderate rain",
-    23: "Heavy rain",
-    31: "Light snowfall",
-    32: "Moderate snowfall",
-    33: "Heavy snowfall",
-    41: "Light rain showers",
-    42: "Rain showers",
-    43: "Heavy rain showers",
-    51: "Thunderstorm",
-    61: "Light sleet",
-    62: "Sleet",
-    63: "Heavy sleet",
-    71: "Light rain with thunder",
-    72: "Rain with thunder",
-    73: "Heavy rain with thunder",
-    81: "Light sleet with thunder",
-    82: "Sleet with thunder",
-    83: "Heavy sleet with thunder",
-    91: "Light snowfall with thunder",
-    92: "Snowfall with thunder",
-    93: "Heavy snowfall with thunder",
+# Descriptions copied from FMI SmartSymbol documentation so wording matches the
+# icon set shown on https://en.ilmatieteenlaitos.fi/weather-symbols.
+SMART_SYMBOL_DESCRIPTIONS: Dict[int, str] = {
+    1: "clear",
+    2: "mostly clear",
+    4: "partly cloudy",
+    6: "mostly cloudy",
+    7: "overcast",
+    9: "fog",
+    11: "drizzle",
+    14: "freezing drizzle",
+    17: "freezing rain",
+    21: "isolated showers",
+    24: "scattered showers",
+    27: "showers",
+    31: "partly cloudy and periods of light rain",
+    32: "partly cloudy and periods of moderate rain",
+    33: "partly cloudy and periods of heavy rain",
+    34: "mostly cloudy and periods of light rain",
+    35: "mostly cloudy and periods of moderate rain",
+    36: "mostly cloudy and periods of heavy rain",
+    37: "light rain",
+    38: "moderate rain",
+    39: "heavy rain",
+    41: "isolated light sleet showers",
+    42: "isolated moderate sleet showers",
+    43: "isolated heavy sleet showers",
+    44: "scattered light sleet showers",
+    45: "scattered moderate sleet showers",
+    46: "scattered heavy sleet showers",
+    47: "light sleet",
+    48: "moderate sleet",
+    49: "heavy sleet",
+    51: "isolated light snow showers",
+    52: "isolated moderate snow showers",
+    53: "isolated heavy snow showers",
+    54: "scattered light snow showers",
+    55: "scattered moderate snow showers",
+    56: "scattered heavy snow showers",
+    57: "light snowfall",
+    58: "moderate snowfall",
+    59: "heavy snowfall",
+    61: "isolated hail showers",
+    64: "scattered hail showers",
+    67: "hail showers",
+    71: "isolated thundershowers",
+    74: "scattered thundershowers",
+    77: "thundershowers",
 }
+
+# Map legacy FMI WeatherSymbol3 codes to the closest SmartSymbol equivalents so
+# we can keep supporting old feeds while rendering modern iconography.
+LEGACY_SYMBOL_REDIRECTS: Dict[int, int] = {
+    0: 1,
+    3: 6,
+    5: 6,
+    8: 9,
+    10: 11,
+    12: 14,
+    13: 14,
+    15: 17,
+    16: 17,
+    18: 21,
+    19: 24,
+    20: 27,
+    21: 37,
+    22: 38,
+    23: 39,
+    24: 31,
+    25: 32,
+    26: 33,
+    28: 34,
+    29: 35,
+    30: 36,
+    31: 57,
+    32: 58,
+    33: 59,
+    41: 24,
+    42: 27,
+    43: 27,
+    51: 77,
+    61: 47,
+    62: 48,
+    63: 49,
+    71: 71,
+    72: 74,
+    73: 77,
+    81: 71,
+    82: 74,
+    83: 77,
+    91: 71,
+    92: 74,
+    93: 77,
+}
+
+
+def _normalize_symbol_code(code: int) -> Optional[int]:
+    """Translate legacy symbol codes to SmartSymbol codes when possible."""
+    visited: Set[int] = set()
+    candidate = code
+    while True:
+        if candidate in SMART_SYMBOL_DESCRIPTIONS:
+            return candidate
+        if candidate in LEGACY_SYMBOL_REDIRECTS:
+            next_candidate = LEGACY_SYMBOL_REDIRECTS[candidate]
+            if next_candidate in visited:
+                break
+            visited.add(candidate)
+            candidate = next_candidate
+            continue
+        break
+    return None
 
 _NS = {
     "wfs": "http://www.opengis.net/wfs/2.0",
@@ -238,14 +323,20 @@ def _weather_symbol_description(symbol: Optional[float]) -> str:
     if symbol is None:
         return "Unknown"
     code = int(round(symbol))
-    return WEATHER_SYMBOL_DESCRIPTIONS.get(code, f"Weather symbol {code}")
+    normalized = _normalize_symbol_code(code)
+    if normalized is not None:
+        return SMART_SYMBOL_DESCRIPTIONS[normalized]
+    return f"Weather symbol {code}"
 
 
 def _weather_symbol_icon(symbol: Optional[float], daylight: bool) -> Optional[str]:
     if symbol is None:
         return None
     code = int(round(symbol))
-    icon_code = code if daylight else code + 100
+    normalized = _normalize_symbol_code(code)
+    if normalized is None:
+        return None
+    icon_code = normalized if daylight else normalized + 100
     return f"{ICON_BASE_URL}/{icon_code}.svg"
 
 
@@ -330,6 +421,10 @@ def interval_forecast(place: str, *, start_hour: int = 8, total_hours: int = 24,
         interval_end = interval_start + datetime.timedelta(hours=step_hours)
 
         symbol_val = _value_at(symbols, interval_start)
+        raw_symbol_code = int(round(symbol_val)) if symbol_val is not None else None
+        normalized_symbol_code = (
+            _normalize_symbol_code(raw_symbol_code) if raw_symbol_code is not None else None
+        )
         temp_val = _value_at(temps, interval_start)
         wind_val = _value_at(winds, interval_start)
         rain_val = _value_at(precip, interval_start)
@@ -354,7 +449,12 @@ def interval_forecast(place: str, *, start_hour: int = 8, total_hours: int = 24,
                 "temperature_c": temp_val,
                 "wind_ms": wind_val,
                 "precip_mm": max(rain_val, 0.0) if rain_val is not None else None,
-                "symbol_code": int(round(symbol_val)) if symbol_val is not None else None,
+                "raw_symbol_code": raw_symbol_code,
+                "symbol_code": (
+                    normalized_symbol_code
+                    if normalized_symbol_code is not None
+                    else raw_symbol_code
+                ),
                 "symbol_description": _weather_symbol_description(symbol_val),
                 "icon_url": _weather_symbol_icon(symbol_val, is_daylight),
                 "is_daylight": is_daylight,
