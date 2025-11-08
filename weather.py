@@ -53,7 +53,7 @@ _PARAMETER_MAP = {
     "weather_symbol3": "WeatherSymbol3",
 }
 
-ICON_BASE_URL = "https://cdn.fmi.fi/legacy-fmi2017/weather-symbols/2019-11-27/svg"
+ICON_BASE_URL = "https://cdn.fmi.fi/symbol-images/smartsymbol/v3/p"
 
 WEATHER_SYMBOL_DESCRIPTIONS: Dict[int, str] = {
     1: "Clear sky",
@@ -245,8 +245,8 @@ def _weather_symbol_icon(symbol: Optional[float], daylight: bool) -> Optional[st
     if symbol is None:
         return None
     code = int(round(symbol))
-    theme = "light" if daylight else "dark"
-    return f"{ICON_BASE_URL}/{theme}/{code:02d}.svg"
+    icon_code = code if daylight else code + 100
+    return f"{ICON_BASE_URL}/{icon_code}.svg"
 
 
 def _value_at(
