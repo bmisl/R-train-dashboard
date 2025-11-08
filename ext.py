@@ -38,19 +38,25 @@ st.markdown(
             font-weight: 600;
             margin-bottom: 0.35rem;
         }
-        .train-grid {
+       .train-grid {
             display: flex;
             gap: 1.2rem;
             flex-wrap: wrap;
+            justify-content: flex-start;
         }
+
         .train-card {
-            flex: 1 1 420px;
-            min-width: 280px;
+            flex: 0 1 310px;  /* can shrink, but not grow beyond 310px */
+            width: 310px;     /* sets the intended max width */
+            max-width: 310px; /* ensures it won’t exceed this width */
+            min-width: 250px; /* optional: allows a bit of shrink if needed */
         }
+
         .train-embed {
             height: 210px;
             position: relative;
         }
+
         .train-embed iframe {
             width: 303%;
             height: 640px;
