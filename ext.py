@@ -7,6 +7,7 @@ from datetime import date
 import hashlib
 import json
 import re
+from html import unescape
 from typing import Iterable, List, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -78,7 +79,39 @@ def _load_kevin_kelly_quotes() -> List[Tuple[str, Optional[str]]]:
             quotes.extend(_collect_quotes(data))
 
     if not quotes:
-        # Fallback: look for JSON-like quote fragments in the markup.
+        # Fallback: parse rendered quote blocks from the HTML markup.
+        block_re = re.compile(
+            r'<div[^>]+class="[^"}]*relative\s+my-10[^"}]*"[^>]*>(.*?)<div class="border',
+            re.DOTALL,
+        )
+        text_re = re.compile(
+            r'<div[^>]+class="[^"}]*text-lg[^"}]*text-gray-700[^"}]*"[^>]*>(.*?)</div>',
+            re.DOTALL,
+        )
+        author_re = re.compile(
+            r'<div[^>]+class="[^"}]*text-lg[^"}]*"[^>]*>\s*[—-]\s*(.*?)</div>',
+            re.DOTALL,
+        )
+
+        for block in block_re.finditer(text):
+            block_html = block.group(1)
+            text_match = text_re.search(block_html)
+            if not text_match:
+                continue
+            raw_quote = re.sub(r"<.*?>", "", text_match.group(1))
+            cleaned_quote = unescape(re.sub(r"\s+", " ", raw_quote)).strip()
+            cleaned_quote = cleaned_quote.strip('"“”')
+            if not cleaned_quote:
+                continue
+            author_match = author_re.search(block_html)
+            author = None
+            if author_match:
+                raw_author = re.sub(r"<.*?>", "", author_match.group(1))
+                author = unescape(re.sub(r"\s+", " ", raw_author)).strip()
+            quotes.append((cleaned_quote, author or "Kevin Kelly"))
+
+    if not quotes:
+        # Final fallback: look for JSON-like quote fragments in the markup.
         for match in re.finditer(r'"quote"\s*:\s*"(.*?)"', text):
             snippet = match.group(1)
             try:
@@ -87,9 +120,19 @@ def _load_kevin_kelly_quotes() -> List[Tuple[str, Optional[str]]]:
                 pass
             cleaned = re.sub(r"\s+", " ", snippet).strip()
             if cleaned:
-                quotes.append((cleaned, "Kevin Kelly"))
+                quotes.append((cleaned.strip('"“”'), "Kevin Kelly"))
 
-    return quotes
+    # Remove duplicates while preserving order.
+    deduped: List[Tuple[str, Optional[str]]] = []
+    seen_quotes = set()
+    for quote_text, author in quotes:
+        key = quote_text.strip()
+        if not key or key in seen_quotes:
+            continue
+        seen_quotes.add(key)
+        deduped.append((quote_text.strip(), author))
+
+    return deduped
 
 
 def _select_quote(quotes: Iterable[Tuple[str, Optional[str]]]) -> Optional[Tuple[str, Optional[str]]]:
