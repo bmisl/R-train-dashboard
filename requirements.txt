@@ -6,6 +6,7 @@ streamlit-autorefresh
 requests
 pandas
 pytz
+astral>=3.2
 
 # Map visualization
 folium
