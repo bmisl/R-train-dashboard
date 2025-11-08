@@ -8,14 +8,18 @@ Streamlit dashboard combining:
 - 🌧️ Live rain radar (Sataako.fi embed)
 
 Behavior:
-- Weather summary shown first (Paippinen, Ainola, Helsinki at 08:00 and 16:00)
+- Weather summary shows Paippinen daylight info and 4-hour forecast blocks for Järvenpää and Helsinki.
 - Trains render immediately on first run.
 - After trains are shown, the app triggers one rerun to load the roads map.
 - Compact layout (minimal whitespace).
 """
 
-import streamlit as st
+import json
+import os
+import textwrap
 from datetime import datetime
+
+import streamlit as st
 
 # ----------------------------
 # 1) PAGE CONFIG
@@ -48,44 +52,87 @@ st.markdown(
             padding-top: 0rem !important;
             padding-bottom: 0rem !important;
         }
-        .weather-box {
-            background: #ffffff;
-            padding: 0.55em 0.7em 0.65em;
-            border-radius: 0.6em;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            margin-bottom: 0.25em;
-            height: 100%;
+        .sun-card {
+            background: #f5f7fb;
+            border-radius: 0.75em;
+            border: 1px solid rgba(48, 69, 98, 0.15);
+            padding: 0.8em 1em;
+            margin-bottom: 0.8em;
         }
-        .weather-title {
+        .sun-card h4 {
+            margin: 0 0 0.4em 0;
+            font-size: 1em;
             font-weight: 700;
-            font-size: 0.95em;
-            text-align: center;
-            margin-bottom: 0.35em;
         }
-        .metric-row {
+        .sun-card .sun-grid {
             display: flex;
-            justify-content: space-between;
-            gap: 0.4em;
+            gap: 1.2em;
+            flex-wrap: wrap;
         }
-        .metric-item {
-            flex: 1;
+        .sun-card .sun-item {
             display: flex;
             flex-direction: column;
-            align-items: center;
-            text-align: center;
-            font-size: 0.82em;
+            font-size: 0.85em;
+            color: #304562;
         }
-        .metric-icon {
-            font-size: 1.3em;
+        .sun-card .sun-item span {
+            font-weight: 600;
             margin-bottom: 0.15em;
         }
-        .metric-label {
-            font-weight: 600;
-            margin-bottom: 0.05em;
+        .forecast-card {
+            background: #ffffff;
+            border: 1px solid rgba(48, 69, 98, 0.12);
+            border-radius: 0.75em;
+            padding: 0.7em 0.85em;
+            height: 100%;
         }
-        .metric-value {
+        .forecast-title {
+            font-weight: 700;
+            font-size: 1em;
+            margin-bottom: 0.4em;
+            text-align: center;
+        }
+        .forecast-range {
+            font-size: 0.75em;
+            color: #61728c;
+            text-align: center;
+            margin-bottom: 0.4em;
+        }
+        .forecast-row {
+            display: grid;
+            grid-template-columns: 1.3fr 0.9fr 1.8fr 1fr 1fr 1fr;
+            align-items: center;
+            gap: 0.4em;
+            padding: 0.35em 0.2em;
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
             font-size: 0.78em;
+        }
+        .forecast-row:first-of-type {
+            border-top: none;
+        }
+        .forecast-time {
+            font-weight: 600;
+            color: #1c2d44;
+        }
+        .forecast-icon {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .forecast-icon img {
+            width: 32px;
+            height: 32px;
+        }
+        .forecast-icon .fallback-icon {
+            font-size: 1.3em;
+        }
+        .forecast-desc {
             color: #304562;
+        }
+        .forecast-metric {
+            text-align: right;
+            color: #1f3650;
+            font-feature-settings: "tnum";
         }
     </style>
     """,
@@ -98,82 +145,95 @@ st.title("🚆 Ainola Commute Dashboard")
 # 3) WEATHER SUMMARY (TOP)
 # ----------------------------
 try:
-    from weather import weather_metrics, set_config
+    from weather import daylight_summary, interval_forecast
 
-    def safe_weather_metrics(time_str, place):
-        """Fetch metrics for a place/time combo, returning (metrics, error)."""
-        try:
-            set_config(place=place, forecast_hours=48)
-            metrics, error = weather_metrics(time_str)
-            if error:
-                return None, error
-            return metrics, None
-        except Exception as e:
-            return None, f"❌ {e}"
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    config = {}
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
 
-    def render_weather_card(column, title, place, time_str):
-        metrics, error = safe_weather_metrics(time_str, place)
+    home_coords = config.get("HOME_COORDS", {})
+    if home_coords:
+        sun_info = daylight_summary(home_coords.get("lat"), home_coords.get("lon"))
+        sunrise = sun_info.get("sunrise") or "—"
+        sunset = sun_info.get("sunset") or "—"
+        day_length = sun_info.get("day_length") or "—"
+        sun_html = f"""
+        <div class="sun-card">
+            <h4>☀️ Paippinen daylight today</h4>
+            <div class="sun-grid">
+                <div class="sun-item"><span>Sunrise</span>{sunrise}</div>
+                <div class="sun-item"><span>Sunset</span>{sunset}</div>
+                <div class="sun-item"><span>Day length</span>{day_length}</div>
+            </div>
+        </div>
+        """
+        st.markdown(sun_html, unsafe_allow_html=True)
+
+    def render_interval_card(column, title, place):
+        data, error = interval_forecast(place)
         if error:
-            column.markdown(
-                f"""
-                <div class="weather-box">
-                    <strong>{title}</strong>
-                    <div style="margin-top:0.4em;">{error}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            column.error(error)
             return
 
-        rain_mm = metrics["rain_mm"]
-        temp_c = metrics["temperature_c"]
-        wind_ms = metrics["wind_ms"]
+        intervals = data.get("intervals", [])
+        if not intervals:
+            column.warning("No forecast data available.")
+            return
 
-        if rain_mm >= 1.0:
-            rain_icon = "☂️"
-            rain_label = "Rain"
-            rain_value = f"{rain_mm:.1f} mm/h"
-        elif rain_mm >= 0.1:
-            rain_icon = "🌦️"
-            rain_label = "Rain"
-            rain_value = f"{rain_mm:.1f} mm/h"
-        else:
-            rain_icon = "☀️"
-            rain_label = "Dry"
-            rain_value = "0.0 mm/h"
+        start = data.get("start")
+        end = data.get("end")
+        range_str = ""
+        if start and end:
+            range_str = f"{start.strftime('%a %d.%m %H:%M')} → {end.strftime('%a %d.%m %H:%M')}"
 
-        temp_icon = "❄️" if temp_c < 0 else "🌡️"
-        wind_icon = "💨" if wind_ms >= 5 else "🍃"
+        def fmt_val(value, unit):
+            if value is None:
+                return "—"
+            return f"{value:.1f} {unit}"
 
-        metric_rows = [
-            (rain_icon, rain_label, rain_value),
-            (temp_icon, "Temperature", f"{temp_c:.1f} °C"),
-            (wind_icon, "Wind", f"{wind_ms:.1f} m/s"),
-        ]
+        rows_html = []
+        for item in intervals:
+            icon_html = (
+                f"<img src='{item['icon_url']}' alt='{item['symbol_description']}' />"
+                if item.get("icon_url")
+                else "<span class='fallback-icon'>☁️</span>"
+            )
+            label = item.get("label", "")
+            desc = item.get("symbol_description", "")
+            temp_text = fmt_val(item.get("temperature_c"), "°C")
+            rain_text = fmt_val(item.get("precip_mm"), "mm/h")
+            wind_text = fmt_val(item.get("wind_ms"), "m/s")
 
-        metrics_html = "".join(
-            f"<div class='metric-item'>"
-            f"<div class='metric-icon'>{icon}</div>"
-            f"<div class='metric-label'>{label}</div>"
-            f"<div class='metric-value'>{value}</div>"
-            "</div>"
-            for icon, label, value in metric_rows
-        )
+            row_html = textwrap.dedent(
+                f"""
+                <div class="forecast-row">
+                    <div class="forecast-time">{label}</div>
+                    <div class="forecast-icon">{icon_html}</div>
+                    <div class="forecast-desc">{desc}</div>
+                    <div class="forecast-metric">{temp_text}</div>
+                    <div class="forecast-metric">{rain_text}</div>
+                    <div class="forecast-metric">{wind_text}</div>
+                </div>
+                """
+            ).strip()
+            rows_html.append(row_html)
 
         card_html = (
-            "<div class=\"weather-box\">"
-            f"<div class=\"weather-title\">{title}</div>"
-            "<div class=\"metric-row\">"
-            f"{metrics_html}"
+            "<div class=\"forecast-card\">"
+            f"<div class=\"forecast-title\">{title}</div>"
+            f"<div class=\"forecast-range\">{range_str}</div>"
+            "<div class=\"forecast-rows\">"
+            f"{''.join(rows_html)}"
             "</div>"
             "</div>"
         )
-
         column.markdown(card_html, unsafe_allow_html=True)
 
     cols = st.columns(2)
-    render_weather_card(cols[0], "🌅 Järvenpää 08:00", "Järvenpää", "08:00")
-    render_weather_card(cols[1], "🌇 Helsinki 16:00", "Helsinki", "16:00")
+    render_interval_card(cols[0], "Järvenpää – 4h forecast blocks", "Järvenpää")
+    render_interval_card(cols[1], "Helsinki – 4h forecast blocks", "Helsinki")
 
     timestamp = datetime.now().strftime("%H:%M")
     st.markdown(
@@ -239,6 +299,33 @@ st.components.v1.iframe(
 # ----------------------------
 # 7) FOOTER
 # ----------------------------
+st.markdown("<hr style='margin:0.4em 0;'>", unsafe_allow_html=True)
+st.subheader("🔗 External resources")
+st.markdown(
+    "Explore the detailed FMI local forecast for Paippinen and live Junalahdot departure boards.",
+    help="Embedded pages load from en.ilmatieteenlaitos.fi and junalahdot.fi.",
+)
+
+st.components.v1.iframe(
+    "https://en.ilmatieteenlaitos.fi/local-weather/sipoo/paippinen",
+    height=820,
+    scrolling=True,
+)
+
+train_cols = st.columns(2)
+with train_cols[0]:
+    st.components.v1.iframe(
+        "https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki",
+        height=520,
+        scrolling=True,
+    )
+with train_cols[1]:
+    st.components.v1.iframe(
+        "https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola",
+        height=520,
+        scrolling=True,
+    )
+
 st.markdown("<hr style='margin:0.4em 0;'>", unsafe_allow_html=True)
 st.caption(
     "Data from FMI and Digitraffic.fi — trains render immediately; "
