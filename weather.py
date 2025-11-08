@@ -20,7 +20,16 @@ from zoneinfo import ZoneInfo
 import requests
 import xml.etree.ElementTree as ET
 
-from astral import AstralError, LocationInfo
+try:
+    from astral import LocationInfo  # type: ignore
+except ImportError:  # pragma: no cover - Astral optional
+    LocationInfo = None
+
+try:  # Astral 2.x exposes AstralError via astral; 3.x removed it
+    from astral import AstralError  # type: ignore
+except ImportError:  # pragma: no cover - fallback for versions without AstralError
+    AstralError = Exception  # type: ignore
+
 from astral.sun import sun
 
 # -----------------------------------
