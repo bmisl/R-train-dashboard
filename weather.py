@@ -14,14 +14,24 @@ Usage examples:
 import argparse
 import datetime
 import math
+from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
+
 import requests
 import xml.etree.ElementTree as ET
+
+from astral import AstralError, LocationInfo
+from astral.sun import sun
 
 # -----------------------------------
 # DEFAULT CONFIGURATION
 # -----------------------------------
 DEFAULT_PLACE = "Helsinki"
 DEFAULT_FORECAST_HOURS = 24
+try:
+    DEFAULT_TIMEZONE = ZoneInfo("Europe/Helsinki")
+except Exception:  # pragma: no cover - fallback for systems without timezone database
+    DEFAULT_TIMEZONE = datetime.timezone.utc
 STORED_QUERY = "fmi::forecast::harmonie::surface::point::multipointcoverage"
 STEP_MIN = 60
 
@@ -31,6 +41,37 @@ _PARAMETER_MAP = {
     "temperature": "Temperature",
     "windspeedms": "WindSpeedMS",
     "wind_speed": "WindSpeedMS",
+    "weather_symbol3": "WeatherSymbol3",
+}
+
+ICON_BASE_URL = "https://cdn.fmi.fi/legacy-fmi2017/weather-symbols/2019-11-27/svg"
+
+WEATHER_SYMBOL_DESCRIPTIONS: Dict[int, str] = {
+    1: "Clear sky",
+    2: "Partly cloudy",
+    3: "Cloudy",
+    21: "Light rain",
+    22: "Moderate rain",
+    23: "Heavy rain",
+    31: "Light snowfall",
+    32: "Moderate snowfall",
+    33: "Heavy snowfall",
+    41: "Light rain showers",
+    42: "Rain showers",
+    43: "Heavy rain showers",
+    51: "Thunderstorm",
+    61: "Light sleet",
+    62: "Sleet",
+    63: "Heavy sleet",
+    71: "Light rain with thunder",
+    72: "Rain with thunder",
+    73: "Heavy rain with thunder",
+    81: "Light sleet with thunder",
+    82: "Sleet with thunder",
+    83: "Heavy sleet with thunder",
+    91: "Light snowfall with thunder",
+    92: "Snowfall with thunder",
+    93: "Heavy snowfall with thunder",
 }
 
 _NS = {
@@ -60,18 +101,21 @@ def set_config(place=None, forecast_hours=None):
 # -----------------------------------
 # CORE FORECAST FETCH
 # -----------------------------------
-def _fetch_forecast(parameter):
+def _fetch_forecast(parameter: str, *, place: Optional[str] = None,
+                    forecast_hours: Optional[int] = None):
     """Fetch forecast values and geolocation from FMI Open Data for a given parameter."""
     now = datetime.datetime.now(datetime.UTC)
+    place = place or _config["place"]
+    forecast_hours = forecast_hours or _config["forecast_hours"]
     starttime = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    endtime = (now + datetime.timedelta(hours=_config["forecast_hours"])).strftime("%Y-%m-%dT%H:%M:%SZ")
+    endtime = (now + datetime.timedelta(hours=forecast_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     fmi_parameter = _PARAMETER_MAP.get(parameter.lower(), parameter)
     url = (
         "https://opendata.fmi.fi/wfs?"
         f"service=WFS&version=2.0.0&request=getFeature"
         f"&storedquery_id={STORED_QUERY}"
-        f"&place={_config['place']}"
+        f"&place={place}"
         f"&parameters={fmi_parameter}"
         f"&starttime={starttime}"
         f"&endtime={endtime}"
@@ -115,6 +159,185 @@ def _fetch_forecast(parameter):
 
     times = [now + datetime.timedelta(hours=i) for i in range(len(values))]
     return list(zip(times, values)), location, None
+
+
+# -----------------------------------
+# TIME & SUN HELPERS
+# -----------------------------------
+def _coerce_timezone(tz: Optional[ZoneInfo]) -> datetime.tzinfo:
+    if tz is not None:
+        return tz
+    return DEFAULT_TIMEZONE
+
+
+def _safe_astimezone(dt: datetime.datetime, tz: datetime.tzinfo) -> datetime.datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(tz)
+
+
+def _format_day_length(delta: Optional[datetime.timedelta]) -> Optional[str]:
+    if not delta:
+        return None
+    seconds = int(delta.total_seconds())
+    hours, remainder = divmod(seconds, 3600)
+    minutes = remainder // 60
+    return f"{hours} h {minutes:02d} min"
+
+
+def daylight_info(lat: float, lon: float, *, date: Optional[datetime.date] = None,
+                  tz: Optional[ZoneInfo] = None) -> Tuple[Optional[datetime.datetime],
+                                                         Optional[datetime.datetime],
+                                                         Optional[datetime.timedelta]]:
+    """Return (sunrise, sunset, day_length) for the given coordinate."""
+    tzinfo = _coerce_timezone(tz)
+    target_date = date or _safe_astimezone(datetime.datetime.now(datetime.UTC), tzinfo).date()
+
+    if LocationInfo is None:
+        return None, None, None
+
+    timezone_name = tzinfo.key if hasattr(tzinfo, "key") else "Europe/Helsinki"
+    location = LocationInfo(latitude=lat, longitude=lon, timezone=timezone_name)
+    try:
+        sun_events = sun(location.observer, date=target_date, tzinfo=tzinfo)
+    except AstralError:
+        return None, None, None
+
+    sunrise = sun_events.get("sunrise")
+    sunset = sun_events.get("sunset")
+    day_length = None
+    if sunrise and sunset:
+        day_length = sunset - sunrise
+    return sunrise, sunset, day_length
+
+
+def daylight_summary(lat: float, lon: float, *, date: Optional[datetime.date] = None,
+                     tz: Optional[ZoneInfo] = None) -> Dict[str, Optional[str]]:
+    tzinfo = _coerce_timezone(tz)
+    sunrise, sunset, length = daylight_info(lat, lon, date=date, tz=tzinfo)
+    return {
+        "sunrise": sunrise.strftime("%H:%M") if sunrise else None,
+        "sunset": sunset.strftime("%H:%M") if sunset else None,
+        "day_length": _format_day_length(length),
+        "sunrise_dt": sunrise,
+        "sunset_dt": sunset,
+    }
+
+
+def _weather_symbol_description(symbol: Optional[float]) -> str:
+    if symbol is None:
+        return "Unknown"
+    code = int(round(symbol))
+    return WEATHER_SYMBOL_DESCRIPTIONS.get(code, f"Weather symbol {code}")
+
+
+def _weather_symbol_icon(symbol: Optional[float], daylight: bool) -> Optional[str]:
+    if symbol is None:
+        return None
+    code = int(round(symbol))
+    theme = "light" if daylight else "dark"
+    return f"{ICON_BASE_URL}/{theme}/{code:02d}.svg"
+
+
+def _value_at(forecasts: List[Tuple[datetime.datetime, float]], target: datetime.datetime) -> Optional[float]:
+    if not forecasts:
+        return None
+    idx = _find_closest_index(forecasts, target)
+    if idx is None:
+        return None
+    return forecasts[idx][1]
+
+
+def interval_forecast(place: str, *, start_hour: int = 8, total_hours: int = 24,
+                      step_hours: int = 4, tz: Optional[ZoneInfo] = None,
+                      forecast_hours: int = 48) -> Tuple[Optional[Dict], Optional[str]]:
+    """Build structured forecast for a place over fixed intervals."""
+    if total_hours % step_hours != 0:
+        return None, "❌ total_hours must be divisible by step_hours"
+
+    tzinfo = _coerce_timezone(tz)
+    now_local = _safe_astimezone(datetime.datetime.now(datetime.UTC), tzinfo)
+    start_local = datetime.datetime.combine(
+        now_local.date(), datetime.time(hour=start_hour), tzinfo
+    )
+    if start_local <= now_local:
+        start_local += datetime.timedelta(days=1)
+
+    try:
+        padding = max(forecast_hours, total_hours + 4)
+        precip, location, err = _fetch_forecast(
+            "precipitation_amount", place=place, forecast_hours=padding
+        )
+        if err:
+            return None, err
+        temps, loc2, err = _fetch_forecast(
+            "temperature", place=place, forecast_hours=padding
+        )
+        if err:
+            return None, err
+        winds, loc3, err = _fetch_forecast(
+            "windspeedms", place=place, forecast_hours=padding
+        )
+        if err:
+            return None, err
+        symbols, loc4, err = _fetch_forecast(
+            "weather_symbol3", place=place, forecast_hours=padding
+        )
+        if err:
+            return None, err
+    except Exception as e:
+        return None, f"❌ Failed to fetch forecast: {e}"
+
+    location = loc4 or loc3 or loc2 or location
+    lat_lon = location if location else (None, None)
+
+    steps = total_hours // step_hours
+    intervals = []
+    daylight_cache: Dict[datetime.date, Dict[str, Optional[str]]] = {}
+
+    for i in range(steps):
+        interval_start = start_local + datetime.timedelta(hours=step_hours * i)
+        interval_end = interval_start + datetime.timedelta(hours=step_hours)
+
+        symbol_val = _value_at(symbols, interval_start)
+        temp_val = _value_at(temps, interval_start)
+        wind_val = _value_at(winds, interval_start)
+        rain_val = _value_at(precip, interval_start)
+
+        daylight_key = interval_start.date()
+        if daylight_key not in daylight_cache and all(lat_lon):
+            daylight_cache[daylight_key] = daylight_summary(
+                lat_lon[0], lat_lon[1], date=daylight_key, tz=tzinfo
+            )
+        daylight_info_for_day = daylight_cache.get(daylight_key, {})
+        sunrise_dt = daylight_info_for_day.get("sunrise_dt")
+        sunset_dt = daylight_info_for_day.get("sunset_dt")
+        is_daylight = False
+        if sunrise_dt and sunset_dt:
+            is_daylight = sunrise_dt <= interval_start < sunset_dt
+
+        intervals.append(
+            {
+                "label": f"{interval_start.strftime('%H:%M')}–{interval_end.strftime('%H:%M')}",
+                "start": interval_start,
+                "end": interval_end,
+                "temperature_c": temp_val,
+                "wind_ms": wind_val,
+                "precip_mm": max(rain_val, 0.0) if rain_val is not None else None,
+                "symbol_code": int(round(symbol_val)) if symbol_val is not None else None,
+                "symbol_description": _weather_symbol_description(symbol_val),
+                "icon_url": _weather_symbol_icon(symbol_val, is_daylight),
+                "is_daylight": is_daylight,
+            }
+        )
+
+    return {
+        "place": place,
+        "start": start_local,
+        "end": intervals[-1]["end"] if intervals else None,
+        "intervals": intervals,
+        "location": lat_lon,
+    }, None
 
 
 # -----------------------------------
