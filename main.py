@@ -16,6 +16,7 @@ Behavior:
 
 import json
 import os
+import textwrap
 from datetime import datetime
 
 import streamlit as st
@@ -199,25 +200,25 @@ try:
                 if item.get("icon_url")
                 else "<span class='fallback-icon'>☁️</span>"
             )
-            rows_html.append(
-                """
+            label = item.get("label", "")
+            desc = item.get("symbol_description", "")
+            temp_text = fmt_val(item.get("temperature_c"), "°C")
+            rain_text = fmt_val(item.get("precip_mm"), "mm/h")
+            wind_text = fmt_val(item.get("wind_ms"), "m/s")
+
+            row_html = textwrap.dedent(
+                f"""
                 <div class="forecast-row">
-                    <div class="forecast-time">{time}</div>
-                    <div class="forecast-icon">{icon}</div>
+                    <div class="forecast-time">{label}</div>
+                    <div class="forecast-icon">{icon_html}</div>
                     <div class="forecast-desc">{desc}</div>
-                    <div class="forecast-metric">{temp}</div>
-                    <div class="forecast-metric">{rain}</div>
-                    <div class="forecast-metric">{wind}</div>
+                    <div class="forecast-metric">{temp_text}</div>
+                    <div class="forecast-metric">{rain_text}</div>
+                    <div class="forecast-metric">{wind_text}</div>
                 </div>
-                """.format(
-                    time=item.get("label", ""),
-                    icon=icon_html,
-                    desc=item.get("symbol_description", ""),
-                    temp=fmt_val(item.get("temperature_c"), "°C"),
-                    rain=fmt_val(item.get("precip_mm"), "mm/h"),
-                    wind=fmt_val(item.get("wind_ms"), "m/s"),
-                )
-            )
+                """
+            ).strip()
+            rows_html.append(row_html)
 
         card_html = (
             "<div class=\"forecast-card\">"

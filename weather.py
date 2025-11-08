@@ -104,7 +104,7 @@ def set_config(place=None, forecast_hours=None):
     if place is not None:
         _config["place"] = place
     if forecast_hours is not None:
-        _config["forecast_hours"] = forecast_hours
+        _config["forecast_hours"] = max(1, forecast_hours)
 
 
 # -----------------------------------
@@ -151,15 +151,16 @@ def _fetch_forecast(parameter: str, *, place: Optional[str] = None,
             location = (lat, lon)
 
     # Extract values
-    values = []
+    values: List[Optional[float]] = []
     for block in root.findall(".//omso:GridSeriesObservation//gml:doubleOrNilReasonTupleList", _NS):
         text = block.text.strip() if block.text else ""
         for v in text.split():
             try:
                 value = float(v)
                 if math.isnan(value):
-                    value = 0.0
-                values.append(value)
+                    values.append(None)
+                else:
+                    values.append(value)
             except ValueError:
                 continue
 
@@ -248,13 +249,33 @@ def _weather_symbol_icon(symbol: Optional[float], daylight: bool) -> Optional[st
     return f"{ICON_BASE_URL}/{theme}/{code:02d}.svg"
 
 
-def _value_at(forecasts: List[Tuple[datetime.datetime, float]], target: datetime.datetime) -> Optional[float]:
+def _value_at(
+    forecasts: List[Tuple[datetime.datetime, Optional[float]]],
+    target: datetime.datetime,
+) -> Optional[float]:
     if not forecasts:
         return None
     idx = _find_closest_index(forecasts, target)
     if idx is None:
         return None
-    return forecasts[idx][1]
+    value = forecasts[idx][1]
+    if value is not None:
+        return value
+
+    # Fall back to nearest non-empty neighbour so minor gaps don't wipe data
+    max_radius = min(len(forecasts), 6)
+    for offset in range(1, max_radius):
+        lower = idx - offset
+        upper = idx + offset
+        if lower >= 0:
+            candidate = forecasts[lower][1]
+            if candidate is not None:
+                return candidate
+        if upper < len(forecasts):
+            candidate = forecasts[upper][1]
+            if candidate is not None:
+                return candidate
+    return None
 
 
 def interval_forecast(place: str, *, start_hour: int = 8, total_hours: int = 24,
@@ -379,7 +400,7 @@ def _find_closest_index(forecasts, target_time):
 # INDIVIDUAL FORECASTS
 # -----------------------------------
 def rain():
-    forecasts, location, error = _fetch_forecast("precipitation_amount")
+    forecasts, _, error = _fetch_forecast("precipitation_amount")
     if error:
         return error
     if not forecasts:
@@ -387,8 +408,13 @@ def rain():
 
     rain_intensity = []
     for timestamp, amount in forecasts:
+        if amount is None:
+            continue
         rate = max(amount, 0.0)
         rain_intensity.append((timestamp, rate))
+
+    if not rain_intensity:
+        return "📭 No rain data."
 
     rain_events = [(t, rate) for t, rate in rain_intensity if rate > 0.1]
     if rain_events:
@@ -413,9 +439,21 @@ def temperature():
     if not forecasts:
         return "📭 No temperature data."
 
-    current = forecasts[0][1]
-    vals = [v for _, v in forecasts]
-    return f"🌡️ Now: {current:.1f}°C | Range: {min(vals):.1f}°C – {max(vals):.1f}°C"
+    values: List[float] = []
+    current: Optional[float] = None
+    for _, reading in forecasts:
+        if reading is None:
+            continue
+        if current is None:
+            current = reading
+        values.append(reading)
+
+    if current is None or not values:
+        return "📭 No temperature data."
+
+    return (
+        f"🌡️ Now: {current:.1f}°C | Range: {min(values):.1f}°C – {max(values):.1f}°C"
+    )
 
 
 def wind():
@@ -425,9 +463,19 @@ def wind():
     if not forecasts:
         return "📭 No wind data."
 
-    current = forecasts[0][1]
-    vals = [v for _, v in forecasts]
-    return f"💨 Now: {current:.1f} m/s | Max: {max(vals):.1f} m/s"
+    values: List[float] = []
+    current: Optional[float] = None
+    for _, reading in forecasts:
+        if reading is None:
+            continue
+        if current is None:
+            current = reading
+        values.append(reading)
+
+    if current is None or not values:
+        return "📭 No wind data."
+
+    return f"💨 Now: {current:.1f} m/s | Max: {max(values):.1f} m/s"
 
 
 # -----------------------------------
@@ -452,20 +500,18 @@ def _collect_weather_metrics(time_str: str):
     if err_rain or err_temp or err_wind:
         return None, "❌ Failed to fetch forecast data"
 
-    rain_idx = _find_closest_index(rain_data, target_time)
-    temp_idx = _find_closest_index(temp_data, target_time)
-    wind_idx = _find_closest_index(wind_data, target_time)
+    rain_rate = _value_at(rain_data, target_time)
+    temp_val = _value_at(temp_data, target_time)
+    wind_val = _value_at(wind_data, target_time)
 
-    if any(idx is None for idx in (rain_idx, temp_idx, wind_idx)):
+    if any(v is None for v in (rain_rate, temp_val, wind_val)):
         return None, "📭 No forecast available for that time."
-
-    rain_rate = max(rain_data[rain_idx][1], 0.0)
 
     metrics = {
         "target_time": target_time,
-        "rain_mm": rain_rate,
-        "temperature_c": temp_data[temp_idx][1],
-        "wind_ms": wind_data[wind_idx][1],
+        "rain_mm": max(rain_rate, 0.0) if rain_rate is not None else None,
+        "temperature_c": temp_val,
+        "wind_ms": wind_val,
     }
     return metrics, None
 
@@ -523,12 +569,13 @@ def main():
                         help="Forecast range in hours (default: 24)")
     args = parser.parse_args()
 
-    set_config(place=args.place, forecast_hours=args.hours)
+    effective_hours = max(1, args.hours)
+    set_config(place=args.place, forecast_hours=effective_hours)
 
     if args.time:
         print(weather_at(args.time))
     else:
-        print(f"📍 Forecast for {args.place} (next {args.hours}h):")
+        print(f"📍 Forecast for {args.place} (next {effective_hours}h):")
         rain_summary = rain()
         temp_summary = temperature()
         wind_summary = wind()
