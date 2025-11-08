@@ -285,24 +285,52 @@ def fetch_tms_stations():
     data = get_json("https://tie.digitraffic.fi/api/tms/v1/stations")
     if not data:
         return []
+
+    allowed = set(TMS_STATIONS)
+    allowed_str = {str(s) for s in TMS_STATIONS}
+
     tms = []
     for feat in data.get("features", []):
         props = feat.get("properties", {})
-        tms_id = props.get("tmsNumber")
-        if tms_id not in TMS_STATIONS:
+        raw_id = props.get("id")
+        tms_number = props.get("tmsNumber")
+
+        identifiers = [raw_id, tms_number]
+        include = False
+        for candidate in identifiers:
+            if candidate is None:
+                continue
+            if candidate in allowed_str or candidate in allowed:
+                include = True
+                break
+            try:
+                as_int = int(candidate)
+            except (TypeError, ValueError):
+                continue
+            if as_int in allowed:
+                include = True
+                break
+        if not include:
             continue
+
         lon, lat = safe_coords(feat)
         if not inside_bbox(lon, lat):
             continue
 
-        # ✅ Use the correct endpoint directly
-        live = get_json(f"https://tie.digitraffic.fi/api/tms/v1/stations/{tms_id}/data")
+        station_identifier = raw_id or tms_number
+        if station_identifier is None:
+            continue
+
+        live = get_json(f"https://tie.digitraffic.fi/api/tms/v1/stations/{station_identifier}/data")
         if not live:
             continue
 
-        # Extract key sensor values
-        values = {v.get("name", ""): v.get("value") for v in live.get("sensorValues", [])}
-        # Match Finnish key patterns for consistency
+        sensor_values = live.get("sensorValues", [])
+        if isinstance(sensor_values, list):
+            values = {v.get("name", ""): v.get("value") for v in sensor_values}
+        else:
+            values = {}
+
         speed = next(
             (float(v) for k, v in values.items() if re.search(r"KESKINOPEUS", k, re.I)),
             None,
@@ -313,8 +341,9 @@ def fetch_tms_stations():
         )
 
         tms.append({
-            "id": tms_id,
-            "name": props.get("name", f"TMS {tms_id}"),
+            "id": station_identifier,
+            "tms_number": tms_number,
+            "name": props.get("name", f"TMS {station_identifier}"),
             "lat": lat,
             "lon": lon,
             "speed": speed,
