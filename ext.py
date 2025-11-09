@@ -137,8 +137,9 @@ embeds: List[Tuple[str, str, int, bool]] = [
     ),
     (
         "Traffic Situation Map",
-        "https://liikennetilanne.fintraffic.fi/kartta/?lang=en&x=2791520.149538346&y=8496829.188520921&z=11&checkedLayers=1,3,10,11&basemap=streets-vector&iframe=true",
-        720,
+        # 5=cameras, 7=road weather, 8=traffic flow, 25=roadworks, 4=incidents 478 25
+        "https://liikennetilanne.fintraffic.fi/kartta/?lang=en&x=2797894.2876217626&y=8496601.610954674&z=11&checkedLayers=4,7,8&basemap=streets-vector&time=28_0&iframe=true",
+        400,
         False,
     ),
     (
