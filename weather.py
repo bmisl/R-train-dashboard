@@ -681,6 +681,45 @@ def main():
         wind_summary = wind()
         print(f"{rain_summary} | {temp_summary} | {wind_summary}")
 
+# -----------------------------------
+# UMBRELLA CHECK (adaptive threshold)
+# -----------------------------------
+def umbrella_needed_tomorrow() -> tuple[bool, str]:
+    """
+    Check forecast for tomorrow's commute (Kyrölä↔Helsinki).
+
+    Morning: Kyrölä 07–08, Helsinki 08–09
+    Afternoon: Helsinki 15–17, Kyrölä 16–18
+
+    Returns:
+        (need_umbrella: bool, icon: str)
+    """
+    checks = [
+        ("Kyrölä", "tomorrow 07:30"),
+        ("Helsinki", "tomorrow 08:30"),
+        ("Helsinki", "tomorrow 16:00"),
+        ("Kyrölä", "tomorrow 17:00"),
+    ]
+
+    max_rain = 0.0
+    for place, time_str in checks:
+        set_config(place=place, forecast_hours=36)
+        metrics, error = weather_metrics(time_str)
+        if error or metrics is None:
+            continue
+        rain = metrics["rain_mm"] or 0.0
+        max_rain = max(max_rain, rain)
+
+    # Adaptive classification
+    if max_rain >= 5.0:
+        return True, "☔"   # heavy rain
+    elif max_rain >= 2.0:
+        return True, "☂️"   # moderate rain
+    elif max_rain >= 0.5:
+        return True, "🌂"   # light rain
+    else:
+        return False, "🌤️"  # dry
+
 
 if __name__ == "__main__":
     main()

@@ -17,6 +17,7 @@ radar_images/
 data/
 logs/
 tmp/
+.streamlit/
 *.log
 *.csv
 *.sqlite

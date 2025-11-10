@@ -5,8 +5,10 @@ Standalone Streamlit page with embedded external resources.
 
 from typing import List, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from movie_picker import movie_spotlight
 
 import streamlit as st
+import weather
 
 st.set_page_config(
     page_title="Commute Dashboard – My Commute",
@@ -121,7 +123,13 @@ train_section_html = """
 """
 st.markdown(train_section_html, unsafe_allow_html=True)
 
-st.subheader("🌦️ Weather & Conditions")
+# Umbrella check (adaptive)
+need_umbrella, umbrella_icon = weather.umbrella_needed_tomorrow()
+if need_umbrella:
+    st.markdown(f"### {umbrella_icon} Bring umbrella!")
+else:
+    st.markdown(f"### {umbrella_icon} No rain expected.")
+
 embeds: List[Tuple[str, str, int, bool]] = [
     (
         "Paippinen Local Weather",
@@ -186,45 +194,9 @@ try:
 except Exception as e:
     st.error(f"Could not fetch a joke: {e}")
 
-# ---------------------------
-# 2️⃣  Trivia Questions (3 medium true/false)
-# ---------------------------
-st.subheader("🧠 Quick Trivia")
 
-url_trivia = "https://opentdb.com/api.php?amount=3&difficulty=medium&type=boolean"
+# ============================================================
+# 🎬 Movie Spotlight
+# ============================================================
 
-try:
-    r = requests.get(url_trivia, timeout=10)
-    r.raise_for_status()
-    data = r.json()
-    questions = data["results"]
-
-    for i, q in enumerate(questions, start=1):
-        question = html.unescape(q["question"])
-        correct = q["correct_answer"]
-        with st.expander(f"Question {i}: {question}"):
-            st.write(f"**Answer:** {correct}")
-except Exception as e:
-    st.error(f"Could not fetch trivia: {e}")
-
-
-    # movie_snippet.py
-st.title("🎬 Movie Spotlight")
-
-url = "https://www.omdbapi.com/?i=tt3896198&apikey=8f375814"
-r = requests.get(url)
-movie = r.json()
-
-# Short info
-title = movie["Title"]
-year = movie["Year"]
-rating = movie["imdbRating"]
-genre = movie["Genre"]
-plot = movie["Plot"]
-poster = movie["Poster"]
-
-st.image(poster, width=180)
-st.markdown(f"**{title} ({year})**  ⭐ {rating}")
-st.caption(genre)
-st.write(plot)
-
+movie_spotlight()
