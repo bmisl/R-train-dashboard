@@ -300,14 +300,32 @@ def movie_spotlight():
 
     st.markdown("## 🎬 Movie Spotlight")
 
-    # --- Toolbar buttons ---
-    cols = st.columns(6)
-    btn_random   = cols[0].button("🎲 Random", key="btn_random")
-    btn_popular  = cols[1].button("🔥 More popular", key="btn_more_popular")
-    btn_older    = cols[2].button("⏳ Older (−2y)", key="btn_older")
-    btn_newer    = cols[3].button("🚀 Newer (+2y)", key="btn_newer")
-    btn_director = cols[4].button("🎬 Same director", key="btn_same_director")
-    btn_genre    = cols[5].button("🎭 Same genre", key="btn_same_genre")
+    # --- Responsive toolbar (adaptive grid of buttons) ---
+    st.markdown(
+        """
+        <style>
+        .movie-toolbar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        div[data-testid="stHorizontalBlock"] div[data-testid="stVerticalBlock"] > button {
+            width: 100%;
+        }
+        </style>
+        <div class="movie-toolbar"></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    toolbar_cols = st.columns(6)
+    btn_random   = toolbar_cols[0].button("🎲 Random", key="btn_random")
+    btn_popular  = toolbar_cols[1].button("🔥 More popular", key="btn_more_popular")
+    btn_older    = toolbar_cols[2].button("⏳ Older (−2y)", key="btn_older")
+    btn_newer    = toolbar_cols[3].button("🚀 Newer (+2y)", key="btn_newer")
+    btn_director = toolbar_cols[4].button("🎬 Same director", key="btn_same_director")
+    btn_genre    = toolbar_cols[5].button("🎭 Same genre", key="btn_same_genre")
 
     # --- Persistent placeholder for the movie card ---
     if "movie_placeholder" not in st.session_state:
