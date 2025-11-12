@@ -124,9 +124,11 @@ train_section_html = """
 st.markdown(train_section_html, unsafe_allow_html=True)
 
 # Umbrella check (adaptive)
-need_umbrella, umbrella_icon = weather.umbrella_needed_tomorrow()
+need_umbrella, umbrella_icon, umbrella_details = weather.umbrella_needed()
+
 if need_umbrella:
     st.markdown(f"### {umbrella_icon} Bring umbrella!")
+    st.markdown(f"{umbrella_details}")
 else:
     st.markdown(f"### {umbrella_icon} No rain expected.")
 

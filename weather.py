@@ -682,44 +682,83 @@ def main():
         print(f"{rain_summary} | {temp_summary} | {wind_summary}")
 
 # -----------------------------------
-# UMBRELLA CHECK (adaptive threshold)
+# UMBRELLA CHECK (time-aware adaptive threshold)
 # -----------------------------------
-def umbrella_needed_tomorrow() -> tuple[bool, str]:
+def umbrella_needed() -> tuple[bool, str, str]:
     """
-    Check forecast for tomorrow's commute (Kyrölä↔Helsinki).
-
-    Morning: Kyrölä 07–08, Helsinki 08–09
-    Afternoon: Helsinki 15–17, Kyrölä 16–18
-
+    Check forecast for commute (Kyrölä↔Helsinki) based on current time.
+    
+    18:00-23:59 (evening): Check tomorrow's morning and afternoon commute
+        Morning: Kyrölä 07–08, Helsinki 08–09
+        Afternoon: Helsinki 15–17, Kyrölä 16–18
+    
+    00:00-07:00 (night/early morning): Check today's morning and afternoon commute
+        Morning: Kyrölä 07–08, Helsinki 08–09
+        Afternoon: Helsinki 15–17, Kyrölä 16–18
+    
+    07:00-18:00 (daytime): Check only today's afternoon commute
+        Afternoon: Helsinki 15–17, Kyrölä 16–18
+    
     Returns:
-        (need_umbrella: bool, icon: str)
+        (need_umbrella: bool, icon: str, details: str)
     """
-    checks = [
-        ("Kyrölä", "tomorrow 07:30"),
-        ("Helsinki", "tomorrow 08:30"),
-        ("Helsinki", "tomorrow 16:00"),
-        ("Kyrölä", "tomorrow 17:00"),
-    ]
-
+    from datetime import datetime
+    
+    now = datetime.now()
+    current_hour = now.hour
+    
+    # Determine which checks to perform based on time
+    if 18 <= current_hour < 24:
+        # Evening: check tomorrow's full commute
+        checks = [
+            ("Kyrölä", "tomorrow 07:30", "Tomorrow morning in Ainola"),
+            ("Helsinki", "tomorrow 08:30", "Tomorrow morning in Helsinki"),
+            ("Helsinki", "tomorrow 16:00", "Tomorrow afternoon in Helsinki"),
+            ("Kyrölä", "tomorrow 17:00", "Tomorrow afternoon in Ainola"),
+        ]
+    elif 0 <= current_hour < 7:
+        # Night/early morning: check today's full commute
+        checks = [
+            ("Kyrölä", "today 07:30", "This morning in Ainola"),
+            ("Helsinki", "today 08:30", "This morning in Helsinki"),
+            ("Helsinki", "today 16:00", "This afternoon in Helsinki"),
+            ("Kyrölä", "today 17:00", "This afternoon in Ainola"),
+        ]
+    else:  # 7 <= current_hour < 18
+        # Daytime: only check today's afternoon commute
+        checks = [
+            ("Helsinki", "today 16:00", "This afternoon in Helsinki"),
+            ("Kyrölä", "today 17:00", "This afternoon in Ainola"),
+        ]
+    
     max_rain = 0.0
-    for place, time_str in checks:
+    rain_details = []
+    
+    for place, time_str, label in checks:
         set_config(place=place, forecast_hours=36)
         metrics, error = weather_metrics(time_str)
         if error or metrics is None:
             continue
         rain = metrics["rain_mm"] or 0.0
+        if rain > 0:
+            rain_details.append(f"{label}: {rain:.1f}mm")
         max_rain = max(max_rain, rain)
-
+    
+    # Build details string
+    if rain_details:
+        details = "\n".join(rain_details)
+    else:
+        details = "No rain expected during commute"
+    
     # Adaptive classification
     if max_rain >= 5.0:
-        return True, "☔"   # heavy rain
+        return True, "☔", details   # heavy rain
     elif max_rain >= 2.0:
-        return True, "☂️"   # moderate rain
+        return True, "☂️", details   # moderate rain
     elif max_rain >= 0.5:
-        return True, "🌂"   # light rain
+        return True, "🌂", details   # light rain
     else:
-        return False, "🌤️"  # dry
-
-
+        return False, "🌤️", details  # dry
+    
 if __name__ == "__main__":
     main()
