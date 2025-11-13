@@ -24,6 +24,7 @@ from roads import (
     fetch_camera_stations,
     fetch_tms_stations,
 )
+from trains import fetch_train_locations, get_station_coordinates
 
 # ----------------------------
 # 1) LOAD CONFIGURATION
@@ -31,6 +32,9 @@ from roads import (
 cfg = load_config()
 BOUNDING_BOX = cfg.get("BOUNDING_BOX", {})
 ROADS_OF_INTEREST = cfg.get("ROADS_OF_INTEREST", [])
+TRAIN_LINE = cfg.get("TRAIN_LINE", "R")
+TRAIN_STOPS = cfg.get("TRAIN_STOPS", [])
+STATIONS = cfg.get("STATIONS", {})
 
 # Provide fallback coordinates if not in config.json
 AINOLA = cfg.get("AINOLA_COORDS", {"lat": 60.475, "lon": 25.085, "tooltip": "Ainola Parking"})
@@ -84,6 +88,7 @@ warnings_layer = FeatureGroup(name="🚧 Roadworks & Warnings", show=True)
 weather_layer = FeatureGroup(name="🌡 Weather Stations", show=True)
 camera_layer = FeatureGroup(name="📷 Cameras", show=True)
 tms_layer = FeatureGroup(name="🚗 Traffic Measurement", show=True)
+train_layer = FeatureGroup(name=f"🚆 {TRAIN_LINE}-line trains", show=True)
 
 # ----------------------------
 # 5) ADD MARKERS
@@ -249,15 +254,103 @@ for tms in fetch_tms_stations():
         icon=folium.Icon(color="red", icon="car", prefix="fa")
     ).add_to(tms_layer)
 
+# ----------------------------
+# 9) ADD TRAIN LINE OVERLAY
+# ----------------------------
+station_coords = get_station_coordinates(tuple(TRAIN_STOPS)) if TRAIN_STOPS else {}
+
+ordered_points = []
+for stop_code in TRAIN_STOPS:
+    data = station_coords.get(stop_code.upper())
+    if not data:
+        continue
+    ordered_points.append((data["lat"], data["lon"], STATIONS.get(stop_code, stop_code), stop_code))
+
+if len(ordered_points) >= 2:
+    folium.PolyLine(
+        locations=[(lat, lon) for lat, lon, *_ in ordered_points],
+        weight=5,
+        color="#006400",
+        opacity=0.9,
+        tooltip=f"{TRAIN_LINE}-line track",
+    ).add_to(train_layer)
+
+for lat, lon, name, code in ordered_points:
+    folium.CircleMarker(
+        location=(lat, lon),
+        radius=5,
+        color="#004d26",
+        fill=True,
+        fill_color="#2e8b57",
+        fill_opacity=0.95,
+        tooltip=folium.Tooltip(f"{name} ({code})", sticky=True),
+    ).add_to(train_layer)
+
+train_positions = fetch_train_locations(TRAIN_LINE)
+
+if train_positions:
+    print(f"  - Live trains fetched: {len(train_positions)} for line {TRAIN_LINE}")
+else:
+    print(f"  - Live trains fetched: 0 for line {TRAIN_LINE}")
+
+if ordered_points:
+    lats = [pt[0] for pt in ordered_points]
+    lons = [pt[1] for pt in ordered_points]
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+
+    lat_pad = max(0.02, (max_lat - min_lat) * 0.1)
+    lon_pad = max(0.02, (max_lon - min_lon) * 0.1)
+
+    def in_relevant_area(lon, lat):
+        return (
+            (min_lon - lon_pad) <= lon <= (max_lon + lon_pad)
+            and (min_lat - lat_pad) <= lat <= (max_lat + lat_pad)
+        )
+else:
+    def in_relevant_area(lon, lat):
+        return X_MIN <= lon <= X_MAX and Y_MIN <= lat <= Y_MAX
+
+for train in train_positions:
+    lat = train.get("lat")
+    lon = train.get("lon")
+    if lat is None or lon is None or not in_relevant_area(lon, lat):
+        continue
+
+    speed = train.get("speed")
+    ts = train.get("timestamp")
+    ts_fmt = ""
+    if ts:
+        try:
+            ts_fmt = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%d.%m.%Y %H:%M:%S")
+        except Exception:
+            ts_fmt = ts
+
+    tooltip_html = (
+        f"<b>{TRAIN_LINE} {train.get('trainNumber')}</b><br>"
+        f"Speed: {speed if speed is not None else '—'} km/h"
+    )
+
+    if ts_fmt:
+        tooltip_html += f"<br>Updated: {ts_fmt}"
+
+    folium.Marker(
+        [lat, lon],
+        tooltip=folium.Tooltip(tooltip_html, sticky=True),
+        icon=folium.Icon(color="darkgreen", icon="train", prefix="fa"),
+    ).add_to(train_layer)
+
+
 # Add all feature layers to map
 warnings_layer.add_to(m)
 weather_layer.add_to(m)
 camera_layer.add_to(m)
 tms_layer.add_to(m)
+train_layer.add_to(m)
 LayerControl(collapsed=False).add_to(m)
 
 # ----------------------------
-# 9) ADD BOUNDING BOX FRAME (RED)
+# 10) ADD BOUNDING BOX FRAME (RED)
 # ----------------------------
 bbox_coords = [
     (Y_MIN, X_MIN),
@@ -276,7 +369,7 @@ folium.PolyLine(
 ).add_to(m)
 
 # ----------------------------
-# 10) LEGEND
+# 11) LEGEND
 # ----------------------------
 legend_html = """
 <div style="
@@ -294,12 +387,14 @@ style="stroke:red;stroke-width:4"/></svg> Hazardous<br>
 style="stroke:orange;stroke-width:4"/></svg> Wet / Moist<br>
 <svg height="10" width="20"><line x1="0" y1="5" x2="20" y2="5"
 style="stroke:#4a90e2;stroke-width:4"/></svg> Normal<br>
+<svg height="10" width="20"><line x1="0" y1="5" x2="20" y2="5"
+style="stroke:#006400;stroke-width:4"/></svg> R-line track<br>
 </div>
 """
 m.get_root().html.add_child(folium.Element(legend_html))
 
 # ----------------------------
-# 11) SAVE MAP
+# 12) SAVE MAP
 # ----------------------------
 if __name__ == "__main__":
     m.save("roads_map.html")
