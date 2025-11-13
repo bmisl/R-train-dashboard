@@ -288,13 +288,33 @@ for lat, lon, name, code in ordered_points:
 
 train_positions = fetch_train_locations(TRAIN_LINE)
 
-def in_bbox(lon, lat):
-    return X_MIN <= lon <= X_MAX and Y_MIN <= lat <= Y_MAX
+if train_positions:
+    print(f"  - Live trains fetched: {len(train_positions)} for line {TRAIN_LINE}")
+else:
+    print(f"  - Live trains fetched: 0 for line {TRAIN_LINE}")
+
+if ordered_points:
+    lats = [pt[0] for pt in ordered_points]
+    lons = [pt[1] for pt in ordered_points]
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+
+    lat_pad = max(0.02, (max_lat - min_lat) * 0.1)
+    lon_pad = max(0.02, (max_lon - min_lon) * 0.1)
+
+    def in_relevant_area(lon, lat):
+        return (
+            (min_lon - lon_pad) <= lon <= (max_lon + lon_pad)
+            and (min_lat - lat_pad) <= lat <= (max_lat + lat_pad)
+        )
+else:
+    def in_relevant_area(lon, lat):
+        return X_MIN <= lon <= X_MAX and Y_MIN <= lat <= Y_MAX
 
 for train in train_positions:
     lat = train.get("lat")
     lon = train.get("lon")
-    if lat is None or lon is None or not in_bbox(lon, lat):
+    if lat is None or lon is None or not in_relevant_area(lon, lat):
         continue
 
     speed = train.get("speed")
