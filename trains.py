@@ -21,6 +21,7 @@ import zoneinfo
 import json
 import os
 import time
+from functools import lru_cache
 
 # ----------------------------
 # 2) CONFIGURATION
@@ -57,6 +58,10 @@ HEADERS = {
     "Digitraffic-User": cfg.get("USER_AGENT", "Birgir-ainola-dashboard/1.0")
 }
 
+STATIONS_METADATA_URL = "https://rata.digitraffic.fi/api/v1/metadata/stations"
+TRAIN_LOCATIONS_URL = "https://rata.digitraffic.fi/api/v1/train-locations/latest/"
+TRAIN_LOCATIONS_GRAPHQL_URL = "https://rata.digitraffic.fi/api/v2/graphql"
+
 # ----------------------------
 # 3) TIME HELPERS
 # ----------------------------
@@ -71,6 +76,21 @@ def format_hki(dt: datetime) -> str:
 # ----------------------------
 # 4) FETCH FUNCTIONS
 # ----------------------------
+def get_json(url, retries=2, timeout=6):
+    """Safely fetch JSON payload from Digitraffic with retry logic."""
+    for attempt in range(retries + 1):
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=timeout)
+            response.raise_for_status()
+            return response.json()
+        except (ConnectionError, ReadTimeout):
+            if attempt == retries:
+                return None
+            time.sleep(0.4)
+        except requests.RequestException:
+            return None
+
+
 def fetch_station_window(station_code: str, before=PAST_MINUTES, after=FUTURE_MINUTES, limit=500, retries=2):
     """
     Fetch trains from Digitraffic API for a specific station.
@@ -90,6 +110,150 @@ def fetch_station_window(station_code: str, before=PAST_MINUTES, after=FUTURE_MI
             if attempt == retries:
                 return []
             time.sleep(0.4)  # short delay before retry
+
+
+@lru_cache(maxsize=1)
+def _station_metadata():
+    """Fetch metadata for all Finnish railway stations (cached)."""
+    data = get_json(STATIONS_METADATA_URL)
+    if not data:
+        return []
+    return data
+
+
+def get_station_coordinates(station_codes):
+    """Return mapping of station code → {lat, lon, name} for requested stations."""
+    wanted = {code.upper() for code in station_codes}
+    coords = {}
+    for station in _station_metadata():
+        code = station.get("stationShortCode")
+        if not code or code.upper() not in wanted:
+            continue
+        lat = station.get("latitude")
+        lon = station.get("longitude")
+        if lat is None or lon is None:
+            continue
+        coords[code.upper()] = {
+            "lat": lat,
+            "lon": lon,
+            "name": station.get("stationName", code),
+        }
+    return coords
+
+
+def fetch_live_trains_graphql(train_line: str = TRAIN_LINE):
+    """Fetch live train positions for the given line using the Digitraffic GraphQL API."""
+    line = (train_line or "").strip().upper()
+    if not line:
+        return []
+
+    query_line = line.replace('"', "")
+    query = f"""
+    {{
+      currentlyRunningTrains(
+        where: {{
+          and: [
+            {{ operator: {{ shortCode: {{ equals: \"vr\" }} }} }}
+            {{ commuterLineid: {{ equals: \"{query_line}\" }} }}
+          ]
+        }}
+        orderBy: {{ trainNumber: DESCENDING }}
+      ) {{
+        trainNumber
+        commuterLineid
+        trainLocations(orderBy: {{ timestamp: DESCENDING }}, take: 1) {{
+          timestamp
+          speed
+          heading
+          location
+        }}
+      }}
+    }}
+    """
+
+    headers = dict(HEADERS)
+    headers.setdefault("Content-Type", "application/json")
+
+    try:
+        response = requests.post(
+            TRAIN_LOCATIONS_GRAPHQL_URL,
+            json={"query": query},
+            headers=headers,
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as exc:
+        print(f"⚠️ Failed to fetch {line}-line trains via GraphQL: {exc}")
+        return []
+
+    trains = []
+    for train in data.get("data", {}).get("currentlyRunningTrains", []):
+        locations = train.get("trainLocations") or []
+        if not locations:
+            continue
+
+        latest = locations[0]
+        location = latest.get("location") or {}
+        coords = location.get("coordinates") or []
+        if len(coords) < 2:
+            continue
+
+        lon, lat = coords[0], coords[1]
+        trains.append(
+            {
+                "trainNumber": train.get("trainNumber"),
+                "line": train.get("commuterLineid") or line,
+                "timestamp": latest.get("timestamp"),
+                "speed": latest.get("speed"),
+                "bearing": latest.get("heading"),
+                "lat": lat,
+                "lon": lon,
+            }
+        )
+
+    if trains:
+        print(f"Fetched {len(trains)} live {line}-line trains via GraphQL")
+    return trains
+
+
+def fetch_train_locations(train_line: str = TRAIN_LINE):
+    """Fetch latest live locations for the configured commuter line."""
+    graphql_trains = fetch_live_trains_graphql(train_line)
+    if graphql_trains:
+        return graphql_trains
+
+    payload = get_json(TRAIN_LOCATIONS_URL)
+    if not payload:
+        return []
+
+    results = []
+    wanted_line = (train_line or "").upper()
+
+    for entry in payload:
+        line = entry.get("commuterLineID") or entry.get("commuterLineId") or ""
+        if wanted_line and line.upper() != wanted_line:
+            continue
+
+        location = entry.get("location", {})
+        coords = location.get("coordinates") or []
+        if len(coords) < 2:
+            continue
+
+        lon, lat = coords[0], coords[1]
+        results.append(
+            {
+                "trainNumber": entry.get("trainNumber"),
+                "line": line or train_line,
+                "speed": entry.get("speed"),
+                "bearing": entry.get("bearing"),
+                "timestamp": entry.get("timestamp") or entry.get("timeStamp"),
+                "lat": lat,
+                "lon": lon,
+            }
+        )
+
+    return results
 
 # ----------------------------
 # 5) TRAIN LOGIC
