@@ -60,6 +60,7 @@ HEADERS = {
 
 STATIONS_METADATA_URL = "https://rata.digitraffic.fi/api/v1/metadata/stations"
 TRAIN_LOCATIONS_URL = "https://rata.digitraffic.fi/api/v1/train-locations/latest/"
+TRAIN_LOCATIONS_GRAPHQL_URL = "https://rata.digitraffic.fi/api/v2/graphql"
 
 # ----------------------------
 # 3) TIME HELPERS
@@ -140,8 +141,88 @@ def get_station_coordinates(station_codes):
     return coords
 
 
+def fetch_live_trains_graphql(train_line: str = TRAIN_LINE):
+    """Fetch live train positions for the given line using the Digitraffic GraphQL API."""
+    line = (train_line or "").strip().upper()
+    if not line:
+        return []
+
+    query_line = line.replace('"', "")
+    query = f"""
+    {{
+      currentlyRunningTrains(
+        where: {{
+          and: [
+            {{ operator: {{ shortCode: {{ equals: \"vr\" }} }} }}
+            {{ commuterLineid: {{ equals: \"{query_line}\" }} }}
+          ]
+        }}
+        orderBy: {{ trainNumber: DESCENDING }}
+      ) {{
+        trainNumber
+        commuterLineid
+        trainLocations(orderBy: {{ timestamp: DESCENDING }}, take: 1) {{
+          timestamp
+          speed
+          heading
+          location
+        }}
+      }}
+    }}
+    """
+
+    headers = dict(HEADERS)
+    headers.setdefault("Content-Type", "application/json")
+
+    try:
+        response = requests.post(
+            TRAIN_LOCATIONS_GRAPHQL_URL,
+            json={"query": query},
+            headers=headers,
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as exc:
+        print(f"⚠️ Failed to fetch {line}-line trains via GraphQL: {exc}")
+        return []
+
+    trains = []
+    for train in data.get("data", {}).get("currentlyRunningTrains", []):
+        locations = train.get("trainLocations") or []
+        if not locations:
+            continue
+
+        latest = locations[0]
+        location = latest.get("location") or {}
+        coords = location.get("coordinates") or []
+        if len(coords) < 2:
+            continue
+
+        lon, lat = coords[0], coords[1]
+        trains.append(
+            {
+                "trainNumber": train.get("trainNumber"),
+                "line": train.get("commuterLineid") or line,
+                "timestamp": latest.get("timestamp"),
+                "speed": latest.get("speed"),
+                "bearing": latest.get("heading"),
+                "lat": lat,
+                "lon": lon,
+            }
+        )
+
+    if trains:
+        print(f"Fetched {len(trains)} live {line}-line trains via GraphQL")
+    return trains
+
+
 def fetch_train_locations(train_line: str = TRAIN_LINE):
     """Fetch latest live locations for the configured commuter line."""
+    graphql_trains = fetch_live_trains_graphql(train_line)
+    if graphql_trains:
+        return graphql_trains
+
     payload = get_json(TRAIN_LOCATIONS_URL)
     if not payload:
         return []
