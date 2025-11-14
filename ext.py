@@ -125,6 +125,41 @@ train_section_html = """
 """
 st.markdown(train_section_html, unsafe_allow_html=True)
 
+helsinki_time = datetime.now(ZoneInfo("Europe/Helsinki")).time()
+if time(6, 0) <= helsinki_time < time(22, 0):
+    st.markdown(
+        """
+        <div class="embed-wrapper" style="max-width: 480px; margin: left;">
+        <div class="embed-title" style="font-weight:600; margin-bottom:6px; text-align:left;">
+            Live R-Train Map (morning peak)
+        </div>
+        <div class="embed-frame" 
+            style="
+                position: relative;
+                padding-bottom: 75%; /* keeps aspect ratio */
+                height: 0;
+                overflow: hidden;
+                border-radius: 10px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            ">
+            <iframe 
+            src="https://14142.net/kartalla/index.en.html?data=hsl&lat=60.475&lng=25.1&zoom=13&types=train&routes=R"
+            title="Live Train Map"
+            loading="lazy"
+            style="
+                position: absolute;
+                top: 0; left: 0;
+                width: 100%; height: 100%;
+                border: none;
+            ">
+            </iframe>
+        </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 # Umbrella check (adaptive)
 need_umbrella, umbrella_icon, umbrella_details = weather.umbrella_needed()
 
@@ -134,19 +169,6 @@ if need_umbrella:
 else:
     st.markdown(f"### {umbrella_icon} No rain expected.")
 
-helsinki_time = datetime.now(ZoneInfo("Europe/Helsinki")).time()
-if time(6, 0) <= helsinki_time < time(9, 0):
-    st.markdown(
-        """
-        <div class="embed-wrapper">
-            <div class="embed-title">Live Train Map (Morning Peak)</div>
-            <div class="embed-frame" style="height: 600px;">
-                <iframe src="https://juliadata.fi/map/view?mode=trains#11.42/60.4556/25.0706" loading="lazy" title="Live Train Map"></iframe>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
 embeds: List[Tuple[str, str, int, bool]] = [
     (
