@@ -3,12 +3,14 @@
 Standalone Streamlit page with embedded external resources.
 """
 
+from datetime import datetime, time
 from typing import List, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from movie_picker import movie_spotlight
 
 import streamlit as st
 import weather
+from zoneinfo import ZoneInfo
 
 st.set_page_config(
     page_title="Commute Dashboard – My Commute",
@@ -131,6 +133,20 @@ if need_umbrella:
     st.markdown(f"{umbrella_details}")
 else:
     st.markdown(f"### {umbrella_icon} No rain expected.")
+
+helsinki_time = datetime.now(ZoneInfo("Europe/Helsinki")).time()
+if time(6, 0) <= helsinki_time < time(9, 0):
+    st.markdown(
+        """
+        <div class="embed-wrapper">
+            <div class="embed-title">Live Train Map (Morning Peak)</div>
+            <div class="embed-frame" style="height: 600px;">
+                <iframe src="https://juliadata.fi/map/view?mode=trains#11.42/60.4556/25.0706" loading="lazy" title="Live Train Map"></iframe>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 embeds: List[Tuple[str, str, int, bool]] = [
     (
