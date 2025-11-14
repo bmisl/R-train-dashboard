@@ -59,8 +59,13 @@ HEADERS = {
 }
 
 STATIONS_METADATA_URL = "https://rata.digitraffic.fi/api/v1/metadata/stations"
-TRAIN_LOCATIONS_URL = "https://rata.digitraffic.fi/api/v1/train-locations/latest/"
-TRAIN_LOCATIONS_GRAPHQL_URL = "https://rata.digitraffic.fi/api/v2/graphql"
+TRAIN_LOCATIONS_GEOJSON_URL = "https://rata.digitraffic.fi/api/v1/train-locations.geojson/latest"
+# Digitraffic moved their GraphQL endpoint under a nested /graphql path in 2024.
+# The previous url ("/api/v2/graphql") now returns HTTP 404 which meant our
+# first-tier live train lookup always failed and we never displayed markers on
+# the map.  Point the client to the new canonical endpoint so the GraphQL call
+# succeeds again before falling back to the REST feed.
+TRAIN_LOCATIONS_GRAPHQL_URL = "https://rata.digitraffic.fi/api/v2/graphql/graphql"
 
 # ----------------------------
 # 3) TIME HELPERS
@@ -217,41 +222,87 @@ def fetch_live_trains_graphql(train_line: str = TRAIN_LINE):
     return trains
 
 
+def _bbox_query_string() -> str:
+    """Return bbox query string derived from config ("xmin,ymin,xmax,ymax")."""
+    bbox_cfg = cfg.get("BOUNDING_BOX") or {}
+    try:
+        return ",".join(
+            str(bbox_cfg[key])
+            for key in ("X_MIN", "Y_MIN", "X_MAX", "Y_MAX")
+        )
+    except KeyError:
+        return ""
+
+
 def fetch_train_locations(train_line: str = TRAIN_LINE):
     """Fetch latest live locations for the configured commuter line."""
     graphql_trains = fetch_live_trains_graphql(train_line)
     if graphql_trains:
         return graphql_trains
 
-    payload = get_json(TRAIN_LOCATIONS_URL)
+    url = TRAIN_LOCATIONS_GEOJSON_URL
+    bbox_query = _bbox_query_string()
+    if bbox_query:
+        url = f"{url}?bbox={bbox_query}"
+
+    payload = get_json(url)
     if not payload:
         return []
 
     results = []
     wanted_line = (train_line or "").upper()
 
-    for entry in payload:
-        line = entry.get("commuterLineID") or entry.get("commuterLineId") or ""
-        if wanted_line and line.upper() != wanted_line:
-            continue
+    # Handle the GeoJSON structure introduced in 2024 while staying backward compatible
+    if isinstance(payload, dict) and isinstance(payload.get("features"), list):
+        entries = payload.get("features") or []
+        for feature in entries:
+            props = feature.get("properties") or {}
+            geometry = feature.get("geometry") or {}
+            coords = geometry.get("coordinates") or []
+            if len(coords) < 2:
+                continue
 
-        location = entry.get("location", {})
-        coords = location.get("coordinates") or []
-        if len(coords) < 2:
-            continue
+            line = props.get("commuterLineId") or props.get("commuterLineID") or ""
+            normalized_line = (line or "").upper()
+            if wanted_line and normalized_line and normalized_line != wanted_line:
+                continue
 
-        lon, lat = coords[0], coords[1]
-        results.append(
-            {
-                "trainNumber": entry.get("trainNumber"),
-                "line": line or train_line,
-                "speed": entry.get("speed"),
-                "bearing": entry.get("bearing"),
-                "timestamp": entry.get("timestamp") or entry.get("timeStamp"),
-                "lat": lat,
-                "lon": lon,
-            }
-        )
+            lon, lat = coords[0], coords[1]
+            results.append(
+                {
+                    "trainNumber": props.get("trainNumber"),
+                    "line": line or train_line,
+                    "speed": props.get("speed"),
+                    "bearing": props.get("heading") or props.get("bearing"),
+                    "timestamp": props.get("timestamp"),
+                    "lat": lat,
+                    "lon": lon,
+                }
+            )
+    else:
+        for entry in payload:
+            line = entry.get("commuterLineID") or entry.get("commuterLineId") or ""
+            normalized_line = (line or "").upper()
+            if wanted_line and normalized_line and normalized_line != wanted_line:
+                continue
+
+            location = entry.get("location", {})
+            coords = location.get("coordinates") or []
+            if len(coords) < 2:
+                continue
+
+            lon, lat = coords[0], coords[1]
+            results.append(
+                {
+                    "trainNumber": entry.get("trainNumber"),
+                    "line": line or train_line,
+                    "speed": entry.get("speed"),
+                    "bearing": entry.get("bearing"),
+                    "timestamp": entry.get("timestamp") or entry.get("timeStamp"),
+                    "lat": lat,
+                    "lon": lon,
+                }
+            )
 
     return results
 
