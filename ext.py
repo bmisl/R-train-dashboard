@@ -126,7 +126,7 @@ train_section_html = """
 st.markdown(train_section_html, unsafe_allow_html=True)
 
 helsinki_time = datetime.now(ZoneInfo("Europe/Helsinki")).time()
-if time(6, 0) <= helsinki_time < time(22, 0):
+if time(6, 0) <= helsinki_time < time(14, 0):
     st.markdown(
         """
         <div class="embed-wrapper" style="max-width: 480px; margin: left;">
