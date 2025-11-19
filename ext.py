@@ -68,7 +68,7 @@ st.markdown(
             transform-origin: top left;
         }
         .narrow-frame {
-            max-width: 1000px;
+            max-width: 900px;
             margin: 0 auto;
         }
         @media (max-width: 900px) {
@@ -77,6 +77,11 @@ st.markdown(
             }
             .train-card {
                 flex: 1 1 auto;
+            }
+        }
+        @media (max-width: 640px) {
+            .narrow-frame {
+                max-width: 92vw;
             }
         }
     </style>
@@ -165,21 +170,13 @@ needs_attention, commute_icon, commute_details = weather.rough_weather_check()
 
 if needs_attention:
     st.markdown(f"### {commute_icon} Commute weather alert")
-else:
-    st.markdown(f"### {commute_icon} No rain or freezing temps expected")
-st.markdown(f"{commute_details}")
+    st.markdown(f"{commute_details}")
 
 
 embeds: List[Tuple[str, str, int, bool]] = [
     (
         "Paippinen Local Weather",
         "https://en.ilmatieteenlaitos.fi/local-weather/sipoo/paippinen",
-        900,
-        True,
-    ),
-    (
-        "Weather Warnings",
-        "https://en.ilmatieteenlaitos.fi/warnings",
         900,
         True,
     ),

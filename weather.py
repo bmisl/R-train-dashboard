@@ -734,8 +734,10 @@ def rough_weather_check() -> tuple[bool, str, str]:
         ]
     
     max_rain = 0.0
+    max_snow = 0.0
     min_temp: Optional[float] = None
     rain_details: List[str] = []
+    snow_details: List[str] = []
     cold_details: List[str] = []
 
     for place, time_str, label in checks:
@@ -745,27 +747,33 @@ def rough_weather_check() -> tuple[bool, str, str]:
             continue
         rain = metrics["rain_mm"] or 0.0
         temp_c = metrics["temperature_c"]
-        if rain > 0:
-            rain_details.append(f"{label}: {rain:.1f}mm")
-        max_rain = max(max_rain, rain)
+        if rain > 0 and temp_c is not None:
+            if temp_c < 0:
+                snow_details.append(f"{label}: {rain:.1f}mm @ {temp_c:.1f}°C")
+                max_snow = max(max_snow, rain)
+            else:
+                rain_details.append(f"{label}: {rain:.1f}mm")
+                max_rain = max(max_rain, rain)
         if temp_c is not None and (min_temp is None or temp_c < min_temp):
             min_temp = temp_c
         if temp_c is not None and temp_c < 0:
             cold_details.append(f"{label}: {temp_c:.1f}°C")
 
-    # Build details string
-    rain_section = "Rain: " + ("; ".join(rain_details) if rain_details else "No rain expected during commute")
-    if cold_details:
-        cold_section = "Cold: " + "; ".join(cold_details)
-    elif min_temp is None:
-        cold_section = "Cold: Temperature unavailable"
-    else:
-        cold_section = "Cold: Temperatures above freezing"
-    details = "\n".join([rain_section, cold_section])
-
     # Adaptive classification
     rain_flag = max_rain >= 0.5
+    snow_flag = max_snow >= 0.5
     cold_flag = min_temp is not None and min_temp < 0
+
+    sections: List[str] = []
+    if rain_details:
+        sections.append("Rain: " + "; ".join(rain_details))
+    if snow_details:
+        sections.append("Snow: " + "; ".join(snow_details))
+    if cold_flag:
+        sections.append("Cold: " + "; ".join(cold_details))
+
+    if not (rain_flag or snow_flag or cold_flag):
+        return False, "", ""
 
     if max_rain >= 5.0:
         rain_icon = "☔"   # heavy rain
@@ -774,18 +782,19 @@ def rough_weather_check() -> tuple[bool, str, str]:
     elif max_rain >= 0.5:
         rain_icon = "🌂"   # light rain
     else:
-        rain_icon = "🌤️"   # dry
+        rain_icon = ""
 
-    if rain_flag and cold_flag:
-        icon = "❄️" + rain_icon
+    if snow_flag:
+        icon = "❄️"
     elif rain_flag:
-        icon = rain_icon
+        icon = rain_icon or "🌧️"
     elif cold_flag:
         icon = "🥶"
     else:
         icon = "🌤️"
 
-    return rain_flag or cold_flag, icon, details
+    details = "\n".join(sections)
+    return True, icon, details
 
 
 def umbrella_needed() -> tuple[bool, str, str]:
