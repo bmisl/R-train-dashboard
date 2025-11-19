@@ -684,26 +684,28 @@ def main():
 # -----------------------------------
 # UMBRELLA CHECK (time-aware adaptive threshold)
 # -----------------------------------
-def umbrella_needed() -> tuple[bool, str, str]:
+def rough_weather_check() -> tuple[bool, str, str]:
     """
     Check forecast for commute (Kyrölä↔Helsinki) based on current time.
-    
+
+    Now flags both rain (umbrella-worthy) and sub-zero temperatures.
+
     18:00-23:59 (evening): Check tomorrow's morning and afternoon commute
         Morning: Kyrölä 07–08, Helsinki 08–09
         Afternoon: Helsinki 15–17, Kyrölä 16–18
-    
+
     00:00-07:00 (night/early morning): Check today's morning and afternoon commute
         Morning: Kyrölä 07–08, Helsinki 08–09
         Afternoon: Helsinki 15–17, Kyrölä 16–18
-    
+
     07:00-18:00 (daytime): Check only today's afternoon commute
         Afternoon: Helsinki 15–17, Kyrölä 16–18
-    
+
     Returns:
-        (need_umbrella: bool, icon: str, details: str)
+        (needs_attention: bool, icon: str, details: str)
     """
     from datetime import datetime
-    
+
     now = datetime.now()
     current_hour = now.hour
     
@@ -732,33 +734,73 @@ def umbrella_needed() -> tuple[bool, str, str]:
         ]
     
     max_rain = 0.0
-    rain_details = []
-    
+    max_snow = 0.0
+    min_temp: Optional[float] = None
+    rain_details: List[str] = []
+    snow_details: List[str] = []
+    cold_details: List[str] = []
+
     for place, time_str, label in checks:
         set_config(place=place, forecast_hours=36)
         metrics, error = weather_metrics(time_str)
         if error or metrics is None:
             continue
         rain = metrics["rain_mm"] or 0.0
-        if rain > 0:
-            rain_details.append(f"{label}: {rain:.1f}mm")
-        max_rain = max(max_rain, rain)
-    
-    # Build details string
-    if rain_details:
-        details = "\n".join(rain_details)
-    else:
-        details = "No rain expected during commute"
-    
+        temp_c = metrics["temperature_c"]
+        if rain > 0 and temp_c is not None:
+            if temp_c < 0:
+                snow_details.append(f"{label}: {rain:.1f}mm @ {temp_c:.1f}°C")
+                max_snow = max(max_snow, rain)
+            else:
+                rain_details.append(f"{label}: {rain:.1f}mm")
+                max_rain = max(max_rain, rain)
+        if temp_c is not None and (min_temp is None or temp_c < min_temp):
+            min_temp = temp_c
+        if temp_c is not None and temp_c < 0:
+            cold_details.append(f"{label}: {temp_c:.1f}°C")
+
     # Adaptive classification
+    rain_flag = max_rain >= 0.5
+    snow_flag = max_snow >= 0.5
+    cold_flag = min_temp is not None and min_temp < 0
+
+    sections: List[str] = []
+    if rain_details:
+        sections.append("Rain: " + "; ".join(rain_details))
+    if snow_details:
+        sections.append("Snow: " + "; ".join(snow_details))
+    if cold_flag:
+        sections.append("Cold: " + "; ".join(cold_details))
+
+    if not (rain_flag or snow_flag or cold_flag):
+        return False, "", ""
+
     if max_rain >= 5.0:
-        return True, "☔", details   # heavy rain
+        rain_icon = "☔"   # heavy rain
     elif max_rain >= 2.0:
-        return True, "☂️", details   # moderate rain
+        rain_icon = "☂️"   # moderate rain
     elif max_rain >= 0.5:
-        return True, "🌂", details   # light rain
+        rain_icon = "🌂"   # light rain
     else:
-        return False, "🌤️", details  # dry
+        rain_icon = ""
+
+    if snow_flag:
+        icon = "❄️"
+    elif rain_flag:
+        icon = rain_icon or "🌧️"
+    elif cold_flag:
+        icon = "🥶"
+    else:
+        icon = "🌤️"
+
+    details = "\n".join(sections)
+    return True, icon, details
+
+
+def umbrella_needed() -> tuple[bool, str, str]:
+    """Backward-compatible wrapper for :func:`rough_weather_check`."""
+
+    return rough_weather_check()
     
 if __name__ == "__main__":
     main()

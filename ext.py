@@ -68,7 +68,7 @@ st.markdown(
             transform-origin: top left;
         }
         .narrow-frame {
-            max-width: 1000px;
+            max-width: 900px;
             margin: 0 auto;
         }
         @media (max-width: 900px) {
@@ -77,6 +77,11 @@ st.markdown(
             }
             .train-card {
                 flex: 1 1 auto;
+            }
+        }
+        @media (max-width: 640px) {
+            .narrow-frame {
+                max-width: 92vw;
             }
         }
     </style>
@@ -160,26 +165,18 @@ if time(6, 0) <= helsinki_time < time(14, 0):
     )
 
 
-# Umbrella check (adaptive)
-need_umbrella, umbrella_icon, umbrella_details = weather.umbrella_needed()
+# Commute weather check (rain + cold)
+needs_attention, commute_icon, commute_details = weather.rough_weather_check()
 
-if need_umbrella:
-    st.markdown(f"### {umbrella_icon} Bring umbrella!")
-    st.markdown(f"{umbrella_details}")
-else:
-    st.markdown(f"### {umbrella_icon} No rain expected.")
+if needs_attention:
+    st.markdown(f"### {commute_icon} Commute weather alert")
+    st.markdown(f"{commute_details}")
 
 
 embeds: List[Tuple[str, str, int, bool]] = [
     (
         "Paippinen Local Weather",
         "https://en.ilmatieteenlaitos.fi/local-weather/sipoo/paippinen",
-        900,
-        True,
-    ),
-    (
-        "Weather Warnings",
-        "https://en.ilmatieteenlaitos.fi/warnings",
         900,
         True,
     ),
