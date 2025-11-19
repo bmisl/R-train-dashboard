@@ -69,7 +69,7 @@ st.markdown(
         }
         .narrow-frame {
             max-width: 900px;
-            margin: 0 auto;
+            margin: 0;
         }
         @media (max-width: 900px) {
             .train-grid {
