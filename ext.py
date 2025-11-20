@@ -132,43 +132,29 @@ def next_helsinki_departure_text():
         dep_dt = (best_dt or sched_time).astimezone(TZ)
         time_str = dep_dt.strftime("%H:%M")
         track = platform or "—"
-        return f"Next R-train leaves from track {track} at {time_str}.", None
+        return f"Next R–train from Helsinki, departs from track {track}, at {time_str}.", None
     except Exception as exc:  # pragma: no cover - defensive guard for runtime errors
         return None, f"Unable to fetch departure info: {exc}"
 
 
-st.subheader("🚆 Live Train Departures")
-
-train_cols = st.columns([1, 0.45, 1])
-with train_cols[0]:
-    st.markdown(
-        """
-        <div class="embed-title">Ainola → Helsinki</div>
-        <div class="embed-frame train-embed">
-            <iframe
-                src="https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki"
-                loading="lazy"
-                title="Ainola to Helsinki live departures"
-            ></iframe>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with train_cols[2]:
-    st.markdown(
-        """
-        <div class="embed-title">Helsinki → Ainola</div>
-        <div class="embed-frame train-embed">
-            <iframe
-                src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola"
-                loading="lazy"
-                title="Helsinki to Ainola live departures"
-            ></iframe>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+st.subheader("🚆 Live Train Departures") 
+train_section_html = """ 
+<div class="train-grid"> 
+    <div class="train-card"> 
+        <div class="embed-title">Ainola → Helsinki</div> 
+            <div class="embed-frame train-embed"> 
+                <iframe src="https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki" loading="lazy" title="Ainola to Helsinki live departures" ></iframe> 
+            </div> 
+        </div> 
+    <div class="train-card"> 
+    <div class="embed-title">Helsinki → Ainola</div> 
+        <div class="embed-frame train-embed"> 
+            <iframe src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola" loading="lazy" title="Helsinki to Ainola live departures" ></iframe> 
+        </div> 
+    </div> 
+</div> 
+"""
+st.markdown(train_section_html, unsafe_allow_html=True)
 
 
 button_visible = announcement_window_active()
@@ -186,14 +172,14 @@ if button_visible and announcement_text:
     st.success(announcement_text)
     st.components.v1.html(
         """
-        <div style="display:flex; justify-content:center; margin: 1rem 0 0.5rem 0;">
+        <div style="display:flex; justify-content:flex-start; margin: 0.5rem 0;">
             <button id="hear-helsinki-r" style="
                 background: linear-gradient(135deg, #2563eb, #1d4ed8);
                 color: white;
                 border: none;
-                border-radius: 12px;
-                padding: 12px 18px;
-                font-size: 16px;
+                border-radius: 10px;
+                padding: 14px 14px;
+                font-size: 14px;
                 font-weight: 600;
                 cursor: pointer;
                 box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
@@ -201,6 +187,7 @@ if button_visible and announcement_text:
                 🔈 Hear next Helsinki R-train
             </button>
         </div>
+
         <script>
             (function() {{
                 const text = {safe_text};
@@ -209,11 +196,35 @@ if button_visible and announcement_text:
 
                 const speak = () => {{
                     const utterance = new SpeechSynthesisUtterance(text);
+
+                    // Strong accent hint for UK English
+                    utterance.lang = "en-GB";
+
                     try {{
                         const voices = window.speechSynthesis.getVoices();
                         if (voices && voices.length) {{
-                            const preferred = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
-                            utterance.voice = preferred || voices[0];
+
+                            // 1. Prefer exact en-GB
+                            let preferred = voices.find(
+                                v => v.lang && v.lang.toLowerCase() === "en-gb"
+                            );
+
+                            // 2. Fallback: any en-GB variant
+                            if (!preferred) {{
+                                preferred = voices.find(
+                                    v => v.lang && v.lang.toLowerCase().startsWith("en-gb")
+                                );
+                            }}
+
+                            // 3. Fallback: any English
+                            if (!preferred) {{
+                                preferred = voices.find(
+                                    v => v.lang && v.lang.toLowerCase().startsWith("en")
+                                );
+                            }}
+
+                            if (preferred) utterance.voice = preferred;
+                            else utterance.voice = voices[0];
                         }}
                     }} catch (e) {{
                         // ignore voice selection errors
@@ -223,18 +234,16 @@ if button_visible and announcement_text:
                     window.speechSynthesis.speak(utterance);
                 }};
 
-                // Warm up voices on iOS/Safari; required for some devices
-                if (typeof window.webkitSpeechSynthesis !== 'undefined') {{
+                // iOS/Safari voice warm-up
+                if (typeof window.webkitSpeechSynthesis !== "undefined") {{
                     window.speechSynthesis.getVoices();
                 }}
 
-                button.addEventListener('click', () => {{
-                    speak();
-                }});
+                button.addEventListener("click", speak);
             }})();
         </script>
         """.format(safe_text=safe_text),
-        height=120,
+        height=110,
     )
 
 
