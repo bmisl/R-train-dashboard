@@ -26,6 +26,37 @@ st.title("🌐 My Commute")
 st.markdown(
     """
     <style>
+        .train-header {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin: 0.25rem 0 0.75rem 0;
+        }
+        .train-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin: 0;
+        }
+        .train-title-icon {
+            font-size: 1.2rem;
+        }
+        .train-audio-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 0.75rem;
+            border: none;
+            cursor: pointer;
+            font-size: 1.3rem;
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: #fff;
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.28);
+        }
+        .train-audio-btn:active {
+            transform: translateY(1px);
+        }
         .embed-frame {
             border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 0.75rem;
@@ -132,29 +163,9 @@ def next_helsinki_departure_text():
         dep_dt = (best_dt or sched_time).astimezone(TZ)
         time_str = dep_dt.strftime("%H:%M")
         track = platform or "—"
-        return f"Next R–train from Helsinki, departs from track {track}, at {time_str}.", None
+        return f"Next R-train leaves from track {track} at {time_str}.", None
     except Exception as exc:  # pragma: no cover - defensive guard for runtime errors
         return None, f"Unable to fetch departure info: {exc}"
-
-
-st.subheader("🚆 Live Train Departures") 
-train_section_html = """ 
-<div class="train-grid"> 
-    <div class="train-card"> 
-        <div class="embed-title">Ainola → Helsinki</div> 
-            <div class="embed-frame train-embed"> 
-                <iframe src="https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki" loading="lazy" title="Ainola to Helsinki live departures" ></iframe> 
-            </div> 
-        </div> 
-    <div class="train-card"> 
-    <div class="embed-title">Helsinki → Ainola</div> 
-        <div class="embed-frame train-embed"> 
-            <iframe src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola" loading="lazy" title="Helsinki to Ainola live departures" ></iframe> 
-        </div> 
-    </div> 
-</div> 
-"""
-st.markdown(train_section_html, unsafe_allow_html=True)
 
 
 button_visible = announcement_window_active()
@@ -167,64 +178,61 @@ if button_visible:
 if announcement_error:
     st.warning(announcement_error)
 
-if button_visible and announcement_text:
+train_section_html = """
+<div class="train-grid">
+    <div class="train-card">
+        <div class="embed-title">Ainola → Helsinki</div>
+        <div class="embed-frame train-embed">
+            <iframe src="https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki" loading="lazy" title="Ainola to Helsinki live departures" ></iframe>
+        </div>
+    </div>
+    <div class="train-card">
+        <div class="embed-title">Helsinki → Ainola</div>
+        <div class="embed-frame train-embed">
+            <iframe src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola" loading="lazy" title="Helsinki to Ainola live departures" ></iframe>
+        </div>
+    </div>
+</div>
+"""
+
+announcement_ready = button_visible and announcement_text
+
+if announcement_ready:
+    header_html = """
+    <div class="train-header">
+        <button id="train-audio-btn" class="train-audio-btn" aria-label="Hear next Helsinki R-train">🚆</button>
+        <span class="train-title">Live Train Departures</span>
+    </div>
+    """
+else:
+    header_html = """
+    <div class="train-header">
+        <span class="train-title-icon">🚆</span>
+        <span class="train-title">Live Train Departures</span>
+    </div>
+    """
+
+st.markdown(header_html, unsafe_allow_html=True)
+st.markdown(train_section_html, unsafe_allow_html=True)
+
+if announcement_ready:
     safe_text = json.dumps(announcement_text)
-    st.success(announcement_text)
     st.components.v1.html(
         """
-        <div style="display:flex; justify-content:flex-start; margin: 0.5rem 0;">
-            <button id="hear-helsinki-r" style="
-                background: linear-gradient(135deg, #2563eb, #1d4ed8);
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 14px 14px;
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-                box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
-            ">
-                🔈 Hear next Helsinki R-train
-            </button>
-        </div>
-
         <script>
             (function() {{
                 const text = {safe_text};
-                const button = document.getElementById('hear-helsinki-r');
+                const button = document.getElementById('train-audio-btn');
                 if (!button || !window.speechSynthesis) return;
 
                 const speak = () => {{
                     const utterance = new SpeechSynthesisUtterance(text);
-
-                    // Strong accent hint for UK English
-                    utterance.lang = "en-GB";
-
                     try {{
                         const voices = window.speechSynthesis.getVoices();
                         if (voices && voices.length) {{
-
-                            // 1. Prefer exact en-GB
-                            let preferred = voices.find(
-                                v => v.lang && v.lang.toLowerCase() === "en-gb"
-                            );
-
-                            // 2. Fallback: any en-GB variant
-                            if (!preferred) {{
-                                preferred = voices.find(
-                                    v => v.lang && v.lang.toLowerCase().startsWith("en-gb")
-                                );
-                            }}
-
-                            // 3. Fallback: any English
-                            if (!preferred) {{
-                                preferred = voices.find(
-                                    v => v.lang && v.lang.toLowerCase().startsWith("en")
-                                );
-                            }}
-
-                            if (preferred) utterance.voice = preferred;
-                            else utterance.voice = voices[0];
+                            const preferredUk = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-gb'));
+                            const preferredEn = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+                            utterance.voice = preferredUk || preferredEn || voices[0];
                         }}
                     }} catch (e) {{
                         // ignore voice selection errors
@@ -234,16 +242,18 @@ if button_visible and announcement_text:
                     window.speechSynthesis.speak(utterance);
                 }};
 
-                // iOS/Safari voice warm-up
-                if (typeof window.webkitSpeechSynthesis !== "undefined") {{
+                // Warm up voices on iOS/Safari; required for some devices
+                if (typeof window.webkitSpeechSynthesis !== 'undefined') {{
                     window.speechSynthesis.getVoices();
                 }}
 
-                button.addEventListener("click", speak);
+                button.addEventListener('click', () => {{
+                    speak();
+                }});
             }})();
         </script>
         """.format(safe_text=safe_text),
-        height=110,
+        height=0,
     )
 
 
