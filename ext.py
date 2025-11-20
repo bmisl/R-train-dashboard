@@ -131,6 +131,8 @@ def get_departure_info(direction: str) -> Tuple[Optional[str], Optional[str]]:
 
 def render_train_departures() -> None:
     """Render live train departure boards with voice announcements."""
+
+    # --- Fetch data ---
     to_hki_text, to_hki_error = get_departure_info("to_helsinki")
     from_hki_text, from_hki_error = get_departure_info("from_helsinki")
 
@@ -139,146 +141,180 @@ def render_train_departures() -> None:
     if from_hki_error:
         st.warning(f"Helsinki → Ainola: {from_hki_error}")
 
-
-    # Prepare JSON-safe strings for JS
+    # --- Convert to JSON for JS ---
     to_hki_js = json.dumps(to_hki_text or "")
     from_hki_js = json.dumps(from_hki_text or "")
 
-    train_html = f"""
-    <div class="train-grid">
-        <style>
-            .train-grid {{
-                display: flex;
-                gap: 1.2rem;
-                flex-wrap: wrap;
-                padding: 10px 0;
-            }}
-            .train-card {{
-                flex: 0 1 310px;
-                min-width: 250px;
-                max-width: 310px;
-            }}
-            .card-title {{
-                font-weight: 600;
-                margin-bottom: 0.35rem;
-            }}
-            .train-embed {{
-                height: 210px;
-                position: relative;
-                border: 1px solid rgba(0, 0, 0, 0.08);
-                border-radius: 0.75rem;
-                overflow: hidden;
-                box-shadow: 0 4px 14px rgba(17, 24, 39, 0.08);
-                background: #ffffff;
-            }}
-            .train-embed iframe {{
-                width: 303%;
-                height: 640px;
-                transform: scale(0.33);
-                transform-origin: top left;
-                border: 0;
-            }}
-            .voice-btn {{
-                position: absolute;
-                inset: 0;
-                background: transparent;
-                border: none;
-                cursor: pointer;
-                z-index: 2;
-            }}
-            .voice-btn:hover {{
-                background: rgba(0, 0, 0, 0.02);
-            }}
-            @media (max-width: 900px) {{
-                .train-grid {{
-                    flex-direction: column;
-                }}
-            }}
-        </style>
+    # --- Build left card ---
+    train_html_left = f"""
+    <style>
+        .train-card {{
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 4px 14px rgba(17, 24, 39, 0.08);
+            background: #ffffff;
+            height: 210px;
+            position: relative;
+        }}
+        .train-card iframe {{
+            width: 303%;
+            height: 640px;
+            transform: scale(0.33);
+            transform-origin: top left;
+            border: 0;
+        }}
+        .voice-btn {{
+            position: absolute;
+            inset: 0;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            z-index: 2;
+        }}
+        .voice-btn:hover {{
+            background: rgba(0, 0, 0, 0.02);
+        }}
+    </style>
 
-        <div class="train-card">
-            <div class="train-embed">
-                <button class="voice-btn" data-dir="to_hki" aria-label="Hear next train from Ainola"></button>
-                <iframe src="https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki"
-                        loading="lazy"></iframe>
-            </div>
-        </div>
+    <div class="train-card">
+        <button class="voice-btn" data-dir="to_hki"
+                aria-label="Hear next train from Ainola"></button>
 
-        <div class="train-card">
-            <div class="train-embed">
-                <button class="voice-btn" data-dir="from_hki" aria-label="Hear next train from Helsinki"></button>
-                <iframe src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola"
-                        loading="lazy"></iframe>
-            </div>
-        </div>
+        <iframe src="https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki"
+                loading="lazy"></iframe>
     </div>
 
     <script>
     (function() {{
-        const toHkiText = {to_hki_js};
-        const fromHkiText = {from_hki_js};
+        const announceText = {to_hki_js};
 
         function speak(text) {{
             if (!text || !window.speechSynthesis) return;
-
             window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
+
+            const utter = new SpeechSynthesisUtterance(text);
 
             const setVoice = () => {{
                 const voices = window.speechSynthesis.getVoices();
-                if (voices && voices.length) {{
-                    const preferred =
-                        voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-gb')) ||
-                        voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en')) ||
+                if (voices.length) {{
+                    utter.voice =
+                        voices.find(v => v.lang.toLowerCase().startsWith('en-gb')) ||
+                        voices.find(v => v.lang.toLowerCase().startsWith('en')) ||
                         voices[0];
-                    utterance.voice = preferred;
                 }}
             }};
 
-            if (window.speechSynthesis.getVoices().length) {{
+            if (window.speechSynthesis.getVoices().length)
                 setVoice();
-            }} else {{
+            else
                 window.speechSynthesis.onvoiceschanged = setVoice;
-            }}
 
-            window.speechSynthesis.speak(utterance);
+            window.speechSynthesis.speak(utter);
         }}
 
-        function bindButtons() {{
-            const buttons = document.querySelectorAll('.voice-btn');
-            if (!buttons.length) return;
-
-            buttons.forEach((btn) => {{
-                if (btn.dataset.bound === "true") return;
-                btn.dataset.bound = "true";
-
-                btn.addEventListener('click', (event) => {{
-                    event.preventDefault();
-                    const dir = btn.dataset.dir;
-                    if (dir === 'to_hki') {{
-                        speak(toHkiText);
-                    }} else if (dir === 'from_hki') {{
-                        speak(fromHkiText);
-                    }}
-                }});
+        const btn = document.querySelector('.voice-btn[data-dir="to_hki"]');
+        if (btn && !btn.dataset.bound) {{
+            btn.dataset.bound = "true";
+            btn.addEventListener('click', (e) => {{
+                e.preventDefault();
+                speak(announceText);
             }});
         }}
-
-        // Warm-up for some browsers (iOS/Safari)
-        try {{
-            window.speechSynthesis.getVoices();
-        }} catch (e) {{}}
-
-        // Initial bind and rebinding in case of reruns
-        bindButtons();
-        const observer = new MutationObserver(() => {{ bindButtons(); }});
-        observer.observe(document.body, {{ childList: true, subtree: true }});
     }})();
     </script>
     """
 
-    st.components.v1.html(train_html, height=280, scrolling=False)
+    # --- Build right card ---
+    train_html_right = f"""
+    <style>
+        .train-card {{
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 4px 14px rgba(17, 24, 39, 0.08);
+            background: #ffffff;
+            height: 210px;
+            position: relative;
+        }}
+        .train-card iframe {{
+            width: 303%;
+            height: 640px;
+            transform: scale(0.33);
+            transform-origin: top left;
+            border: 0;
+        }}
+        .voice-btn {{
+            position: absolute;
+            inset: 0;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            z-index: 2;
+        }}
+        .voice-btn:hover {{
+            background: rgba(0, 0, 0, 0.02);
+        }}
+    </style>
 
+    <div class="train-card">
+        <button class="voice-btn" data-dir="from_hki"
+                aria-label="Hear next train from Helsinki"></button>
+
+        <iframe src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola"
+                loading="lazy"></iframe>
+    </div>
+
+    <script>
+    (function() {{
+        const announceText = {from_hki_js};
+
+        function speak(text) {{
+            if (!text || !window.speechSynthesis) return;
+            window.speechSynthesis.cancel();
+
+            const utter = new SpeechSynthesisUtterance(text);
+
+            const setVoice = () => {{
+                const voices = window.speechSynthesis.getVoices();
+                if (voices.length) {{
+                    utter.voice =
+                        voices.find(v => v.lang.toLowerCase().startsWith('en-gb')) ||
+                        voices.find(v => v.lang.toLowerCase().startsWith('en')) ||
+                        voices[0];
+                }}
+            }};
+
+            if (window.speechSynthesis.getVoices().length)
+                setVoice();
+            else
+                window.speechSynthesis.onvoiceschanged = setVoice;
+
+            window.speechSynthesis.speak(utter);
+        }}
+
+        const btn = document.querySelector('.voice-btn[data-dir="from_hki"]');
+        if (btn && !btn.dataset.bound) {{
+            btn.dataset.bound = "true";
+            btn.addEventListener('click', (e) => {{
+                e.preventDefault();
+                speak(announceText);
+            }});
+        }}
+    }})();
+    </script>
+    """
+
+    # --- Render in two columns ---
+    col1, col2 = st.columns(2)
+    with col1:
+        st.components.v1.html(train_html_left, height=280, scrolling=False)
+    with col2:
+        st.components.v1.html(train_html_right, height=280, scrolling=False)
+
+######################
+# After train sections
+######################
 
 def render_live_train_map() -> None:
     """Render live R-train map during morning peak hours."""
@@ -300,7 +336,6 @@ def render_live_train_map() -> None:
             """,
             unsafe_allow_html=True,
         )
-
 
 def render_weather_alert() -> None:
     """Display weather alert if conditions warrant attention."""
