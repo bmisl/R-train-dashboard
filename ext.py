@@ -110,7 +110,7 @@ def announcement_window_active(now: datetime | None = None) -> bool:
     """Return True between 15:00–17:00 Helsinki time."""
 
     now = now or datetime.now(TZ)
-    return time(15, 0) <= now.time() < time(17, 0)
+    return time(14, 0) <= now.time() < time(17, 0)
 
 
 def next_helsinki_departure_text():
@@ -138,11 +138,9 @@ def next_helsinki_departure_text():
 
 
 st.subheader("🚆 Live Train Departures")
-
-train_cols = st.columns([1, 0.45, 1])
-with train_cols[0]:
-    st.markdown(
-        """
+train_section_html = """
+<div class="train-grid">
+    <div class="train-card">
         <div class="embed-title">Ainola → Helsinki</div>
         <div class="embed-frame train-embed">
             <iframe
@@ -151,13 +149,26 @@ with train_cols[0]:
                 title="Ainola to Helsinki live departures"
             ></iframe>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    </div>
+    <div class="train-card">
+        <div class="embed-title">Helsinki → Ainola</div>
+        <div class="embed-frame train-embed">
+            <iframe
+                src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola"
+                loading="lazy"
+                title="Helsinki to Ainola live departures"
+            ></iframe>
+        </div>
+    </div>
+</div>
+"""
+st.markdown(train_section_html, unsafe_allow_html=True)
 
-with train_cols[1]:
-    if announcement_window_active():
-        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+if announcement_window_active():
+    with st.container():
+        # small spacer
+        st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
         if st.button("🔈 Hear next Helsinki R-train", use_container_width=True):
             announcement, err = next_helsinki_departure_text()
             if err:
@@ -176,27 +187,11 @@ with train_cols[1]:
                     """,
                     height=0,
                 )
-    else:
-        st.markdown(" ")
 
-with train_cols[2]:
-    st.markdown(
-        """
-        <div class="embed-title">Helsinki → Ainola</div>
-        <div class="embed-frame train-embed">
-            <iframe
-                src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola"
-                loading="lazy"
-                title="Helsinki to Ainola live departures"
-            ></iframe>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 helsinki_time = datetime.now(TZ).time()
-if time(6, 0) <= helsinki_time < time(14, 0):
+if time(6, 0) <= helsinki_time < time(12, 0):
     st.markdown(
         """
         <div class="embed-wrapper" style="max-width: 480px; margin: left;">
