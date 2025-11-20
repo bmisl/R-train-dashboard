@@ -5,6 +5,7 @@ commuter data from Finland’s [Digitraffic](https://www.digitraffic.fi/en/) API
 
 It combines:
 - 🚆 **Live train departures and arrivals**
+- 🔊 **R-train audio announcement button** (Helsinki window)
 - 🛣️ **Road conditions, weather, and sensors**
 - 📷 **Traffic cameras and roadworks**
 - 🌡️ **Weather station data, humidity, wind, and precipitation**
@@ -17,6 +18,7 @@ It combines:
 This project brings together multiple data sources into one real-time web dashboard.
 
 - **Top section:** Live train information between two configured stations (e.g. Ainola ↔ Helsinki)
+- **Audio prompt:** During the afternoon announcement window, click the train button to hear the next Helsinki R-train track and time.
 - **Bottom section:** Interactive road map showing conditions, live sensor data, and roadworks
 - **Data:** Pulled live from Digitraffic’s REST APIs for rail, road, and weather networks
 - **Framework:** Streamlit + Folium (Leaflet) for visualization
