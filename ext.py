@@ -217,43 +217,69 @@ st.markdown(train_section_html, unsafe_allow_html=True)
 
 if announcement_ready:
     safe_text = json.dumps(announcement_text)
-    st.components.v1.html(
-        """
+    st.markdown(
+        f"""
         <script>
             (function() {{
                 const text = {safe_text};
-                const button = document.getElementById('train-audio-btn');
-                if (!button || !window.speechSynthesis) return;
 
-                const speak = () => {{
-                    const utterance = new SpeechSynthesisUtterance(text);
-                    try {{
-                        const voices = window.speechSynthesis.getVoices();
-                        if (voices && voices.length) {{
-                            const preferredUk = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-gb'));
-                            const preferredEn = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
-                            utterance.voice = preferredUk || preferredEn || voices[0];
+                const attachHandler = () => {{
+                    const button = document.getElementById('train-audio-btn');
+                    if (!button || !window.speechSynthesis) return false;
+
+                    if (button.dataset.bound === 'true') return true;
+
+                    const speak = () => {{
+                        const utterance = new SpeechSynthesisUtterance(text);
+                        try {{
+                            const voices = window.speechSynthesis.getVoices();
+                            if (voices && voices.length) {{
+                                const preferredUk = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-gb'));
+                                const preferredEn = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+                                utterance.voice = preferredUk || preferredEn || voices[0];
+                            }}
+                        }} catch (e) {{
+                            // ignore voice selection errors
                         }}
-                    }} catch (e) {{
-                        // ignore voice selection errors
+
+                        window.speechSynthesis.cancel();
+                        window.speechSynthesis.speak(utterance);
+                    }};
+
+                    // Warm up voices on iOS/Safari; required for some devices
+                    if (typeof window.webkitSpeechSynthesis !== 'undefined') {{
+                        window.speechSynthesis.getVoices();
                     }}
 
-                    window.speechSynthesis.cancel();
-                    window.speechSynthesis.speak(utterance);
+                    button.dataset.bound = 'true';
+                    button.addEventListener('click', speak);
+                    return true;
                 }};
 
-                // Warm up voices on iOS/Safari; required for some devices
-                if (typeof window.webkitSpeechSynthesis !== 'undefined') {{
-                    window.speechSynthesis.getVoices();
-                }}
+                const bound = attachHandler();
+                if (bound) return;
 
-                button.addEventListener('click', () => {{
-                    speak();
+                const onReady = () => {{
+                    if (attachHandler()) {{
+                        document.removeEventListener('readystatechange', onReady);
+                        window.removeEventListener('load', onReady);
+                    }}
+                }};
+
+                document.addEventListener('readystatechange', onReady);
+                window.addEventListener('load', onReady);
+
+                const observer = new MutationObserver(() => {{
+                    if (attachHandler()) {{
+                        observer.disconnect();
+                    }}
                 }});
+
+                observer.observe(document.body, {{ childList: true, subtree: true }});
             }})();
         </script>
-        """.format(safe_text=safe_text),
-        height=0,
+        """,
+        unsafe_allow_html=True,
     )
 
 
