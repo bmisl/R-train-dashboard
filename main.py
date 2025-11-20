@@ -17,7 +17,8 @@ Behavior:
 import json
 import os
 import textwrap
-from datetime import datetime
+from datetime import datetime, time as dtime
+import zoneinfo
 
 import streamlit as st
 
@@ -140,6 +141,8 @@ st.markdown(
 )
 
 st.title("🚆 Ainola Commute Dashboard")
+
+TZ = zoneinfo.ZoneInfo("Europe/Helsinki")
 
 # ----------------------------
 # 3) WEATHER SUMMARY (TOP)
@@ -296,6 +299,38 @@ st.components.v1.iframe(
     scrolling=False,
 )
 
+
+# ----------------------------
+# 6b) AFTERNOON AUDIO ANNOUNCEMENT HELPERS
+# ----------------------------
+def announcement_window_active(now=None):
+    """Return True between 15:00–17:00 Helsinki time."""
+    now = now or datetime.now(TZ)
+    return dtime(15, 0) <= now.time() < dtime(17, 0)
+
+
+def next_helsinki_departure_text():
+    """Return spoken text for the next R-train leaving Helsinki."""
+    try:
+        from trains import get_trains, load_config
+
+        cfg = load_config()
+        home = cfg.get("HOME_STATIONS", {})
+        origin = home.get("destination", "HKI")
+        dest = home.get("origin", "AIN")
+
+        departures = get_trains(origin, dest)
+        if not departures:
+            return None, "No R-train departures available right now."
+
+        sched_time, _, _, best_dt, platform, _ = departures[0]
+        dep_dt = (best_dt or sched_time).astimezone(TZ)
+        time_str = dep_dt.strftime("%H:%M")
+        track = platform or "—"
+        return f"Next R-train leaves from track {track} at {time_str}.", None
+    except Exception as exc:  # pragma: no cover - defensive guard for runtime errors
+        return None, f"Unable to fetch departure info: {exc}"
+
 # ----------------------------
 # 7) FOOTER
 # ----------------------------
@@ -312,14 +347,39 @@ st.components.v1.iframe(
     scrolling=True,
 )
 
-train_cols = st.columns(2)
+train_cols = st.columns([1, 0.45, 1])
 with train_cols[0]:
     st.components.v1.iframe(
         "https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki",
         height=520,
         scrolling=True,
     )
+
 with train_cols[1]:
+    if announcement_window_active():
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        if st.button("🔈 Hear next Helsinki R-train", use_container_width=True):
+            announcement, err = next_helsinki_departure_text()
+            if err:
+                st.warning(err)
+            elif announcement:
+                st.success(announcement)
+                safe_text = json.dumps(announcement)
+                st.components.v1.html(
+                    f"""
+                    <script>
+                        const text = {safe_text};
+                        const msg = new SpeechSynthesisUtterance(text);
+                        window.speechSynthesis.cancel();
+                        window.speechSynthesis.speak(msg);
+                    </script>
+                    """,
+                    height=0,
+                )
+    else:
+        st.markdown(" ")
+
+with train_cols[2]:
     st.components.v1.iframe(
         "https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola",
         height=520,

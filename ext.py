@@ -3,6 +3,7 @@
 Standalone Streamlit page with embedded external resources.
 """
 
+import json
 from datetime import datetime, time
 from typing import List, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -11,6 +12,8 @@ from movie_picker import movie_spotlight
 import streamlit as st
 import weather
 from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("Europe/Helsinki")
 
 st.set_page_config(
     page_title="Commute Dashboard – My Commute",
@@ -103,10 +106,43 @@ def ensure_main_fragment(url: str) -> str:
     return urlunsplit((split.scheme, split.netloc, split.path, query, "main"))
 
 
+def announcement_window_active(now: datetime | None = None) -> bool:
+    """Return True between 14:00–17:00 Helsinki time."""
+
+    now = now or datetime.now(TZ)
+    return time(14, 0) <= now.time() < time(17, 0)
+
+
+def next_helsinki_departure_text():
+    """Return spoken text for the next R-train leaving Helsinki."""
+
+    try:
+        from trains import get_trains, load_config
+
+        cfg = load_config()
+        home = cfg.get("HOME_STATIONS", {})
+        origin = home.get("destination", "HKI")
+        dest = home.get("origin", "AIN")
+
+        departures = get_trains(origin, dest)
+        if not departures:
+            return None, "No R-train departures available right now."
+
+        sched_time, _, _, best_dt, platform, _ = departures[0]
+        dep_dt = (best_dt or sched_time).astimezone(TZ)
+        time_str = dep_dt.strftime("%H:%M")
+        track = platform or "—"
+        return f"Next R-train leaves from track {track} at {time_str}.", None
+    except Exception as exc:  # pragma: no cover - defensive guard for runtime errors
+        return None, f"Unable to fetch departure info: {exc}"
+
+
 st.subheader("🚆 Live Train Departures")
-train_section_html = """
-<div class="train-grid">
-    <div class="train-card">
+
+train_cols = st.columns([1, 0.45, 1])
+with train_cols[0]:
+    st.markdown(
+        """
         <div class="embed-title">Ainola → Helsinki</div>
         <div class="embed-frame train-embed">
             <iframe
@@ -115,8 +151,13 @@ train_section_html = """
                 title="Ainola to Helsinki live departures"
             ></iframe>
         </div>
-    </div>
-    <div class="train-card">
+        """,
+        unsafe_allow_html=True,
+    )
+
+with train_cols[2]:
+    st.markdown(
+        """
         <div class="embed-title">Helsinki → Ainola</div>
         <div class="embed-frame train-embed">
             <iframe
@@ -125,12 +166,79 @@ train_section_html = """
                 title="Helsinki to Ainola live departures"
             ></iframe>
         </div>
-    </div>
-</div>
-"""
-st.markdown(train_section_html, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
-helsinki_time = datetime.now(ZoneInfo("Europe/Helsinki")).time()
+
+button_visible = announcement_window_active()
+announcement_text = None
+announcement_error = None
+
+if button_visible:
+    announcement_text, announcement_error = next_helsinki_departure_text()
+
+if announcement_error:
+    st.warning(announcement_error)
+
+if button_visible and announcement_text:
+    safe_text = json.dumps(announcement_text)
+    st.success(announcement_text)
+    st.components.v1.html(
+        """
+        <div style="display:flex; justify-content:center; margin: 1rem 0 0.5rem 0;">
+            <button id="hear-helsinki-r" style="
+                background: linear-gradient(135deg, #2563eb, #1d4ed8);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 12px 18px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
+            ">
+                🔈 Hear next Helsinki R-train
+            </button>
+        </div>
+        <script>
+            (function() {{
+                const text = {safe_text};
+                const button = document.getElementById('hear-helsinki-r');
+                if (!button || !window.speechSynthesis) return;
+
+                const speak = () => {{
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    try {{
+                        const voices = window.speechSynthesis.getVoices();
+                        if (voices && voices.length) {{
+                            const preferred = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+                            utterance.voice = preferred || voices[0];
+                        }}
+                    }} catch (e) {{
+                        // ignore voice selection errors
+                    }}
+
+                    window.speechSynthesis.cancel();
+                    window.speechSynthesis.speak(utterance);
+                }};
+
+                // Warm up voices on iOS/Safari; required for some devices
+                if (typeof window.webkitSpeechSynthesis !== 'undefined') {{
+                    window.speechSynthesis.getVoices();
+                }}
+
+                button.addEventListener('click', () => {{
+                    speak();
+                }});
+            }})();
+        </script>
+        """.format(safe_text=safe_text),
+        height=120,
+    )
+
+
+helsinki_time = datetime.now(TZ).time()
 if time(6, 0) <= helsinki_time < time(14, 0):
     st.markdown(
         """
