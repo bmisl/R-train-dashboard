@@ -107,7 +107,7 @@ def ensure_main_fragment(url: str) -> str:
 
 
 def announcement_window_active(now: datetime | None = None) -> bool:
-    """Return True between 15:00–17:00 Helsinki time."""
+    """Return True between 14:00–17:00 Helsinki time."""
 
     now = now or datetime.now(TZ)
     return time(14, 0) <= now.time() < time(17, 0)
@@ -138,9 +138,11 @@ def next_helsinki_departure_text():
 
 
 st.subheader("🚆 Live Train Departures")
-train_section_html = """
-<div class="train-grid">
-    <div class="train-card">
+
+train_cols = st.columns([1, 0.45, 1])
+with train_cols[0]:
+    st.markdown(
+        """
         <div class="embed-title">Ainola → Helsinki</div>
         <div class="embed-frame train-embed">
             <iframe
@@ -149,8 +151,13 @@ train_section_html = """
                 title="Ainola to Helsinki live departures"
             ></iframe>
         </div>
-    </div>
-    <div class="train-card">
+        """,
+        unsafe_allow_html=True,
+    )
+
+with train_cols[2]:
+    st.markdown(
+        """
         <div class="embed-title">Helsinki → Ainola</div>
         <div class="embed-frame train-embed">
             <iframe
@@ -159,39 +166,80 @@ train_section_html = """
                 title="Helsinki to Ainola live departures"
             ></iframe>
         </div>
-    </div>
-</div>
-"""
-st.markdown(train_section_html, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
-if announcement_window_active():
-    with st.container():
-        # small spacer
-        st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
-        if st.button("🔈 Hear next Helsinki R-train", use_container_width=True):
-            announcement, err = next_helsinki_departure_text()
-            if err:
-                st.warning(err)
-            elif announcement:
-                st.success(announcement)
-                safe_text = json.dumps(announcement)
-                st.components.v1.html(
-                    f"""
-                    <script>
-                        const text = {safe_text};
-                        const msg = new SpeechSynthesisUtterance(text);
-                        window.speechSynthesis.cancel();
-                        window.speechSynthesis.speak(msg);
-                    </script>
-                    """,
-                    height=0,
-                )
+button_visible = announcement_window_active()
+announcement_text = None
+announcement_error = None
 
+if button_visible:
+    announcement_text, announcement_error = next_helsinki_departure_text()
+
+if announcement_error:
+    st.warning(announcement_error)
+
+if button_visible and announcement_text:
+    safe_text = json.dumps(announcement_text)
+    st.success(announcement_text)
+    st.components.v1.html(
+        f"""
+        <div style="display:flex; justify-content:center; margin: 1rem 0 0.5rem 0;">
+            <button id="hear-helsinki-r" style="
+                background: linear-gradient(135deg, #2563eb, #1d4ed8);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 12px 18px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
+            ">
+                🔈 Hear next Helsinki R-train
+            </button>
+        </div>
+        <script>
+            (function() {
+                const text = {safe_text};
+                const button = document.getElementById('hear-helsinki-r');
+                if (!button || !window.speechSynthesis) return;
+
+                const speak = () => {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    try {
+                        const voices = window.speechSynthesis.getVoices();
+                        if (voices && voices.length) {
+                            const preferred = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+                            utterance.voice = preferred || voices[0];
+                        }
+                    } catch (e) {
+                        // ignore voice selection errors
+                    }
+
+                    window.speechSynthesis.cancel();
+                    window.speechSynthesis.speak(utterance);
+                };
+
+                // Warm up voices on iOS/Safari; required for some devices
+                if (typeof window.webkitSpeechSynthesis !== 'undefined') {
+                    window.speechSynthesis.getVoices();
+                }
+
+                button.addEventListener('click', () => {
+                    speak();
+                });
+            })();
+        </script>
+        """,
+        height=120,
+    )
 
 
 helsinki_time = datetime.now(TZ).time()
-if time(6, 0) <= helsinki_time < time(12, 0):
+if time(6, 0) <= helsinki_time < time(14, 0):
     st.markdown(
         """
         <div class="embed-wrapper" style="max-width: 480px; margin: left;">
