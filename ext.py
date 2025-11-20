@@ -26,6 +26,37 @@ st.title("🌐 My Commute")
 st.markdown(
     """
     <style>
+        .train-header {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin: 0.25rem 0 0.75rem 0;
+        }
+        .train-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin: 0;
+        }
+        .train-title-icon {
+            font-size: 1.2rem;
+        }
+        .train-audio-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 0.75rem;
+            border: none;
+            cursor: pointer;
+            font-size: 1.3rem;
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: #fff;
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.28);
+        }
+        .train-audio-btn:active {
+            transform: translateY(1px);
+        }
         .embed-frame {
             border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 0.75rem;
@@ -137,40 +168,6 @@ def next_helsinki_departure_text():
         return None, f"Unable to fetch departure info: {exc}"
 
 
-st.subheader("🚆 Live Train Departures")
-
-train_cols = st.columns([1, 0.45, 1])
-with train_cols[0]:
-    st.markdown(
-        """
-        <div class="embed-title">Ainola → Helsinki</div>
-        <div class="embed-frame train-embed">
-            <iframe
-                src="https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki"
-                loading="lazy"
-                title="Ainola to Helsinki live departures"
-            ></iframe>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with train_cols[2]:
-    st.markdown(
-        """
-        <div class="embed-title">Helsinki → Ainola</div>
-        <div class="embed-frame train-embed">
-            <iframe
-                src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola"
-                loading="lazy"
-                title="Helsinki to Ainola live departures"
-            ></iframe>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 button_visible = announcement_window_active()
 announcement_text = None
 announcement_error = None
@@ -181,30 +178,51 @@ if button_visible:
 if announcement_error:
     st.warning(announcement_error)
 
-if button_visible and announcement_text:
+train_section_html = """
+<div class="train-grid">
+    <div class="train-card">
+        <div class="embed-title">Ainola → Helsinki</div>
+        <div class="embed-frame train-embed">
+            <iframe src="https://junalahdot.fi/518952272?command=fs&id=219&dt=dep&lang=3&did=47&title=Ainola%20-%20Helsinki" loading="lazy" title="Ainola to Helsinki live departures" ></iframe>
+        </div>
+    </div>
+    <div class="train-card">
+        <div class="embed-title">Helsinki → Ainola</div>
+        <div class="embed-frame train-embed">
+            <iframe src="https://junalahdot.fi/518952272?command=fs&id=47&dt=dep&lang=3&did=219&title=Helsinki%20-%20Ainola" loading="lazy" title="Helsinki to Ainola live departures" ></iframe>
+        </div>
+    </div>
+</div>
+"""
+
+announcement_ready = button_visible and announcement_text
+
+if announcement_ready:
+    header_html = """
+    <div class="train-header">
+        <button id="train-audio-btn" class="train-audio-btn" aria-label="Hear next Helsinki R-train">🚆</button>
+        <span class="train-title">Live Train Departures</span>
+    </div>
+    """
+else:
+    header_html = """
+    <div class="train-header">
+        <span class="train-title-icon">🚆</span>
+        <span class="train-title">Live Train Departures</span>
+    </div>
+    """
+
+st.markdown(header_html, unsafe_allow_html=True)
+st.markdown(train_section_html, unsafe_allow_html=True)
+
+if announcement_ready:
     safe_text = json.dumps(announcement_text)
-    st.success(announcement_text)
     st.components.v1.html(
         """
-        <div style="display:flex; justify-content:center; margin: 1rem 0 0.5rem 0;">
-            <button id="hear-helsinki-r" style="
-                background: linear-gradient(135deg, #2563eb, #1d4ed8);
-                color: white;
-                border: none;
-                border-radius: 12px;
-                padding: 12px 18px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
-            ">
-                🔈 Hear next Helsinki R-train
-            </button>
-        </div>
         <script>
             (function() {{
                 const text = {safe_text};
-                const button = document.getElementById('hear-helsinki-r');
+                const button = document.getElementById('train-audio-btn');
                 if (!button || !window.speechSynthesis) return;
 
                 const speak = () => {{
@@ -212,8 +230,9 @@ if button_visible and announcement_text:
                     try {{
                         const voices = window.speechSynthesis.getVoices();
                         if (voices && voices.length) {{
-                            const preferred = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
-                            utterance.voice = preferred || voices[0];
+                            const preferredUk = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-gb'));
+                            const preferredEn = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+                            utterance.voice = preferredUk || preferredEn || voices[0];
                         }}
                     }} catch (e) {{
                         // ignore voice selection errors
@@ -234,7 +253,7 @@ if button_visible and announcement_text:
             }})();
         </script>
         """.format(safe_text=safe_text),
-        height=120,
+        height=0,
     )
 
 
