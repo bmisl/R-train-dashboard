@@ -185,7 +185,7 @@ if button_visible and announcement_text:
     safe_text = json.dumps(announcement_text)
     st.success(announcement_text)
     st.components.v1.html(
-        f"""
+        """
         <div style="display:flex; justify-content:center; margin: 1rem 0 0.5rem 0;">
             <button id="hear-helsinki-r" style="
                 background: linear-gradient(135deg, #2563eb, #1d4ed8);
@@ -202,38 +202,38 @@ if button_visible and announcement_text:
             </button>
         </div>
         <script>
-            (function() {
+            (function() {{
                 const text = {safe_text};
                 const button = document.getElementById('hear-helsinki-r');
                 if (!button || !window.speechSynthesis) return;
 
-                const speak = () => {
+                const speak = () => {{
                     const utterance = new SpeechSynthesisUtterance(text);
-                    try {
+                    try {{
                         const voices = window.speechSynthesis.getVoices();
-                        if (voices && voices.length) {
+                        if (voices && voices.length) {{
                             const preferred = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
                             utterance.voice = preferred || voices[0];
-                        }
-                    } catch (e) {
+                        }}
+                    }} catch (e) {{
                         // ignore voice selection errors
-                    }
+                    }}
 
                     window.speechSynthesis.cancel();
                     window.speechSynthesis.speak(utterance);
-                };
+                }};
 
                 // Warm up voices on iOS/Safari; required for some devices
-                if (typeof window.webkitSpeechSynthesis !== 'undefined') {
+                if (typeof window.webkitSpeechSynthesis !== 'undefined') {{
                     window.speechSynthesis.getVoices();
-                }
+                }}
 
-                button.addEventListener('click', () => {
+                button.addEventListener('click', () => {{
                     speak();
-                });
-            })();
+                }});
+            }})();
         </script>
-        """,
+        """.format(safe_text=safe_text),
         height=120,
     )
 
