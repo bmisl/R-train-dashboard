@@ -356,28 +356,29 @@ with train_cols[0]:
     )
 
 with train_cols[1]:
-    if announcement_window_active():
-        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-        if st.button("🔈 Hear next Helsinki R-train", use_container_width=True):
-            announcement, err = next_helsinki_departure_text()
-            if err:
-                st.warning(err)
-            elif announcement:
-                st.success(announcement)
-                safe_text = json.dumps(announcement)
-                st.components.v1.html(
-                    f"""
-                    <script>
-                        const text = {safe_text};
-                        const msg = new SpeechSynthesisUtterance(text);
-                        window.speechSynthesis.cancel();
-                        window.speechSynthesis.speak(msg);
-                    </script>
-                    """,
-                    height=0,
-                )
-    else:
-        st.markdown(" ")
+    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    active_window = announcement_window_active()
+    if not active_window:
+        st.caption("Audio available all day; originally intended for 15–17 Helsinki time.")
+
+    if st.button("🔈 Hear next Helsinki R-train", use_container_width=True):
+        announcement, err = next_helsinki_departure_text()
+        if err:
+            st.warning(err)
+        elif announcement:
+            st.success(announcement)
+            safe_text = json.dumps(announcement)
+            st.components.v1.html(
+                f"""
+                <script>
+                    const text = {safe_text};
+                    const msg = new SpeechSynthesisUtterance(text);
+                    window.speechSynthesis.cancel();
+                    window.speechSynthesis.speak(msg);
+                </script>
+                """,
+                height=20,
+            )
 
 with train_cols[2]:
     st.components.v1.iframe(

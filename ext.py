@@ -198,63 +198,76 @@ train_section_html = """
 announcement_ready = button_visible and announcement_text
 
 if announcement_ready:
-    header_html = """
-    <div class="train-header">
-        <button id="train-audio-btn" class="train-audio-btn" aria-label="Hear next Helsinki R-train">🚆</button>
-        <span class="train-title">Live Train Departures</span>
-    </div>
-    """
-else:
-    header_html = """
-    <div class="train-header">
-        <span class="train-title-icon">🚆</span>
-        <span class="train-title">Live Train Departures</span>
-    </div>
-    """
-
-st.markdown(header_html, unsafe_allow_html=True)
-st.markdown(train_section_html, unsafe_allow_html=True)
-
-if announcement_ready:
     safe_text = json.dumps(announcement_text)
     st.components.v1.html(
-        """
+        f"""
+        <div class="train-header">
+            <button id="train-audio-btn" class="train-audio-btn" aria-label="Hear next Helsinki R-train">🚆</button>
+            <span class="train-title">Live Train Departures</span>
+        </div>
+
         <script>
-            (function() {{
-                const text = {safe_text};
+        (function() {{
+            const text = {safe_text};
+
+            function bind() {{
                 const button = document.getElementById('train-audio-btn');
-                if (!button || !window.speechSynthesis) return;
+                if (!button || !window.speechSynthesis) return false;
+
+                // Avoid double-binding
+                if (button.dataset.bound === 'true') return true;
+                button.dataset.bound = 'true';
 
                 const speak = () => {{
-                    const utterance = new SpeechSynthesisUtterance(text);
+                    const u = new SpeechSynthesisUtterance(text);
+
+                    // Select voice
                     try {{
                         const voices = window.speechSynthesis.getVoices();
                         if (voices && voices.length) {{
-                            const preferredUk = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-gb'));
-                            const preferredEn = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
-                            utterance.voice = preferredUk || preferredEn || voices[0];
+                            const uk = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en-gb'));
+                            const en = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+                            u.voice = uk || en || voices[0];
                         }}
-                    }} catch (e) {{
-                        // ignore voice selection errors
-                    }}
+                    }} catch (e) {{}}
 
                     window.speechSynthesis.cancel();
-                    window.speechSynthesis.speak(utterance);
+                    window.speechSynthesis.speak(u);
                 }};
 
-                // Warm up voices on iOS/Safari; required for some devices
-                if (typeof window.webkitSpeechSynthesis !== 'undefined') {{
-                    window.speechSynthesis.getVoices();
-                }}
+                button.addEventListener('click', speak);
+                return true;
+            }}
 
-                button.addEventListener('click', () => {{
-                    speak();
-                }});
-            }})();
+            // Safari warm-up
+            window.speechSynthesis.getVoices();
+
+            // Try immediate bind
+            if (bind()) return;
+
+            // Retry until ready
+            const observer = new MutationObserver(() => {{
+                if (bind()) observer.disconnect();
+            }});
+
+            observer.observe(document.body, {{ childList: true, subtree: true }});
+        }})();
         </script>
-        """.format(safe_text=safe_text),
-        height=0,
+        """,
+        height=200,
     )
+else:
+    st.markdown(
+        """
+        <div class="train-header">
+            <span class="train-title-icon">🚆</span>
+            <span class="train-title">Live Train Departures</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.markdown(train_section_html, unsafe_allow_html=True)
 
 
 helsinki_time = datetime.now(TZ).time()
