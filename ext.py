@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 import weather
 from movie_picker import movie_spotlight
+import fingrid_prices
 
 # Constants
 TZ = ZoneInfo("Europe/Helsinki")
@@ -345,6 +346,102 @@ def render_weather_alert() -> None:
         st.markdown(details)
 
 
+def render_electricity_prices() -> None:
+    """Display electricity prices for ±24 hours as a highly customized Altair chart."""
+    st.markdown("### ⚡ Electricity Prices (±24h)")
+    
+    try:
+        # Fetch price data using sähkötin.fi logic (accurate spot prices)
+        price_data = fingrid_prices.get_plus_minus_24h_prices()
+        
+        if not price_data:
+            st.warning("No electricity price data available for the ±24h period.")
+            return
+        
+        # Prepare DataFrame
+        import pandas as pd
+        import altair as alt
+        from datetime import datetime
+        
+        df = pd.DataFrame(price_data)
+        df['localTime'] = pd.to_datetime(df['localTime'])
+        df['localEndTime'] = pd.to_datetime(df['localEndTime'])
+        now = datetime.now(fingrid_prices.TZ)
+        
+        # 1. Add "Type" for color coding (Past/Future)
+        df['Period'] = df['localTime'].apply(lambda x: 'Past' if x < now else 'Future')
+        
+        # 2. Identify Highlights (2 cheapest and 2 most expensive slots)
+        # We sort by value and take indices
+        sorted_df = df.sort_values('value')
+        cheapest_indices = sorted_df.head(8).index # 8 slots = 2 hours
+        expensive_indices = sorted_df.tail(8).index # 8 slots = 2 hours
+        
+        # 3. Calculate Colors in DataFrame for stability
+        def get_color(row):
+            if row.name in cheapest_indices:
+                return '#2ecc71' # Green
+            if row.name in expensive_indices:
+                return '#e74c3c' # Red
+            if row['Period'] == 'Past':
+                return '#3498db' # Blue
+            return '#bdc3c7'      # Grey
+            
+        df['color'] = df.apply(get_color, axis=1)
+        
+        # Create Altair Chart
+        chart = alt.Chart(df).mark_bar(
+            stroke=None
+        ).encode(
+            x=alt.X('localTime:T', 
+                    title=None,
+                    axis=alt.Axis(format='%H:%M', labelAngle=0, grid=False)),
+            x2='localEndTime:T', # Enforce width to the next 15-min mark
+            y=alt.Y('value:Q', title='snt/kWh'),
+            y2=alt.value(0),      # Extend bars to the base
+            color=alt.Color('color:N', scale=None), # Use pre-calculated colors
+            tooltip=[
+                alt.Tooltip('localTime:T', title='Date/Time', format='%d.%m. %H:%M'),
+                alt.Tooltip('value:Q', title='Price (snt/kWh)', format='.2f')
+            ]
+        ).properties(
+            height=400,
+        )
+        
+        # Add a vertical line for Midnight
+        # Find the midnight timestamp between today and tomorrow
+        tomorrow_start = now.replace(hour=0, minute=0, second=0, microsecond=0) + pd.Timedelta(days=1)
+        midnight_line = alt.Chart(pd.DataFrame({'x': [tomorrow_start]})).mark_rule(
+            color='white',
+            strokeDash=[5, 5],
+            strokeWidth=2
+        ).encode(x='x:T')
+        
+        # Combine chart and line
+        # Note: Config must be applied to the LAYERED chart, not the base chart
+        final_chart = (chart + midnight_line).interactive().configure_view(
+            strokeWidth=0
+        )
+        
+        # Statistics summary
+        summary = fingrid_prices.get_price_summary(price_data)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Average", f"{summary['avg']:.2f} snt/kWh")
+        with col2:
+            st.metric("Min", f"{summary['min']:.2f} snt/kWh")
+        with col3:
+            st.metric("Max", f"{summary['max']:.2f} snt/kWh")
+            
+        st.altair_chart(final_chart, use_container_width=True)
+        
+        st.caption("💡 Spot prices from Sähkötin.fi API (incl. VAT and standard fees). Blue=Past, Grey=Future, Green=Cheapest 2h, Red=Expensive 2h.")
+        
+    except Exception as e:
+        st.error(f"⚠️ Could not fetch electricity prices: {e}")
+        st.info("Please check your internet connection.")
+
+
 def render_embed(title: str, url: str, height: int, narrow: bool = False) -> None:
     """Render a generic iframe embed."""
     resolved_url = ensure_main_fragment(url)
@@ -389,6 +486,9 @@ def main() -> None:
 
     # Weather
     render_weather_alert()
+
+    # Electricity prices
+    render_electricity_prices()
 
     # External embeds
     embeds: List[Tuple[str, str, int, bool]] = [
