@@ -500,7 +500,7 @@ def render_electricity_prices() -> None:
             y='independent'
         ).properties(
             height=400
-        ).interactive().configure_view(
+        ).configure_view(
             strokeWidth=0
         )
         
