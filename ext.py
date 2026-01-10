@@ -20,6 +20,10 @@ TZ = ZoneInfo("Europe/Helsinki")
 MORNING_PEAK_START = time(6, 0)
 MORNING_PEAK_END = time(14, 0)
 
+# Electricity Price Components (c / kWh)
+AI_TRANSFER = 5.58
+BI_BASE = 0.49
+
 # Page configuration
 st.set_page_config(
     page_title="Commute Dashboard – My Commute",
@@ -352,6 +356,15 @@ def render_electricity_prices() -> None:
     """Display electricity prices for ±24 hours as a highly customized Altair chart with temperature."""
     st.markdown("### ⚡ Electricity Prices & Temperature (±24h)")
     
+    # Toggle for Spot vs Total Price
+    price_view = st.radio(
+        "Price View",
+        ["Spot Price", f"Total Price (Transfer Fee {AI_TRANSFER} c / kWh + Fixed Margin {BI_BASE} c / kWh + Spot Price)"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    show_total = "Total Price" in price_view
+    
     try:
         # Fetch price data using sähkötin.fi logic (accurate spot prices)
         price_data = fingrid_prices.get_plus_minus_24h_prices()
@@ -385,19 +398,7 @@ def render_electricity_prices() -> None:
         cheapest_indices = sorted_df.head(8).index 
         expensive_indices = sorted_df.tail(8).index 
         
-        # 3. Calculate Colors in DataFrame for stability
-        def get_color(row):
-            if row.name in cheapest_indices:
-                return '#2ecc71' # Green
-            if row.name in expensive_indices:
-                return '#e74c3c' # Red
-            if row['Period'] == 'Past':
-                return '#3498db' # Blue
-            return '#bdc3c7'      # Grey
-            
-        df_prices['color'] = df_prices.apply(get_color, axis=1)
-        
-        # Define df_temp early
+        # Prepare df_temp early
         if temp_series:
             df_temp = pd.DataFrame(temp_series, columns=['time', 'temp'])
             df_temp['time'] = pd.to_datetime(df_temp['time'])
@@ -427,23 +428,114 @@ def render_electricity_prices() -> None:
         p_min_adj, p_max = -30, 30
         t_min_adj, t_max = -20, 20
 
-        # Price Chart (Left Axis)
-        price_chart = alt.Chart(df_merged).mark_bar(
-            stroke=None
-        ).encode(
-            x=alt.X('localTime:T', 
-                    title=None,
-                    axis=alt.Axis(format='%H:%M', labelAngle=0, grid=False)),
-            x2='localEndTime:T',
-            y=alt.Y('value:Q', title='c / kWh', scale=alt.Scale(domain=[p_min_adj, p_max])),
-            y2=alt.datum(0),      # Properly extend bars to the data-level 0
-            color=alt.Color('color:N', scale=None),
-            tooltip=[
-                alt.Tooltip('localTime:T', title='Date/Time', format='%d.%m. %H:%M'),
-                alt.Tooltip('value:Q', title='Price (c / kWh)', format='.2f'),
-                alt.Tooltip('Temperature:Q', title='Temp (°C)', format='.1f')
-            ]
-        )
+        # Prepare color and stacking data
+        if not show_total:
+            # Original dynamic coloring for Spot Price view
+            def get_color(row):
+                if row.name in cheapest_indices:
+                    return '#2ecc71' # Green
+                if row.name in expensive_indices:
+                    return '#e74c3c' # Red
+                if row['Period'] == 'Past':
+                    return '#3498db' # Blue
+                return '#bdc3c7'      # Grey
+                
+            df_merged['color'] = df_merged.apply(get_color, axis=1)
+            df_plot = df_merged.copy()
+            
+            # For the single bar view, we need a 'Component' for consistent encoding
+            df_plot['Component'] = 'Spot Price'
+            
+            price_chart = alt.Chart(df_plot).mark_bar(
+                stroke=None
+            ).encode(
+                x=alt.X('localTime:T', 
+                        title=None,
+                        axis=alt.Axis(format='%H:%M', labelAngle=0, grid=False)),
+                x2='localEndTime:T',
+                y=alt.Y('value:Q', title='c / kWh', scale=alt.Scale(domain=[p_min_adj, p_max])),
+                y2=alt.datum(0),
+                color=alt.Color('color:N', scale=None),
+                tooltip=[
+                    alt.Tooltip('localTime:T', title='Date/Time', format='%d.%m. %H:%M'),
+                    alt.Tooltip('value:Q', title='Spot Price (c/kWh)', format='.2f'),
+                    alt.Tooltip('Temperature:Q', title='Temp (°C)', format='.1f')
+                ]
+            )
+        else:
+            # Stacked bar view for Total Price
+            # We need to melt the dataframe or create a long format
+            # Components: Ai (Transfer), Bi (Base), Bii (Spot)
+            rows = []
+            for idx, row in df_merged.iterrows():
+                # 1. Transfer Fee (Bottom: 0 to 5.58)
+                rows.append({
+                    'localTime': row['localTime'],
+                    'localEndTime': row['localEndTime'],
+                    'y_start': 0,
+                    'y_end': AI_TRANSFER,
+                    'Component': 'Transfer Fee',
+                    'Temperature': row['Temperature'],
+                    'Total': AI_TRANSFER + BI_BASE + row['value'],
+                    'color': '#f1c40f', # Yellow
+                })
+                # 2. Fixed Margin (Middle: 5.58 to 6.07)
+                rows.append({
+                    'localTime': row['localTime'],
+                    'localEndTime': row['localEndTime'],
+                    'y_start': AI_TRANSFER,
+                    'y_end': AI_TRANSFER + BI_BASE,
+                    'Component': 'Fixed Margin',
+                    'Temperature': row['Temperature'],
+                    'Total': AI_TRANSFER + BI_BASE + row['value'],
+                    'color': '#e67e22', # Orange
+                })
+                # 3. Spot Price (Top: 6.07 upwards)
+                base_height = AI_TRANSFER + BI_BASE
+                spot_color = '#3498db' if row['Period'] == 'Past' else '#bdc3c7'
+                if idx in cheapest_indices: spot_color = '#2ecc71'
+                if idx in expensive_indices: spot_color = '#e74c3c'
+                
+                rows.append({
+                    'localTime': row['localTime'],
+                    'localEndTime': row['localEndTime'],
+                    'y_start': base_height,
+                    'y_end': base_height + row['value'],
+                    'Component': 'Spot Price',
+                    'Temperature': row['Temperature'],
+                    'Total': AI_TRANSFER + BI_BASE + row['value'],
+                    'color': spot_color,
+                })
+            
+            df_plot = pd.DataFrame(rows)
+            
+            # Domain for total price needs to be larger
+            total_max = df_plot['Total'].max()
+            p_max_total = max(30, (int(total_max / 10) + 1) * 10)
+            p_min_total = p_min_adj # Keep zero alignment
+
+            price_chart = alt.Chart(df_plot).mark_bar(
+                stroke=None
+            ).encode(
+                x=alt.X('localTime:T', 
+                        title=None,
+                        axis=alt.Axis(format='%H:%M', labelAngle=0, grid=False)),
+                x2='localEndTime:T',
+                y=alt.Y('y_start:Q', title='c / kWh', scale=alt.Scale(domain=[p_min_total, p_max_total])),
+                y2='y_end:Q',
+                color=alt.Color('color:N', scale=None),
+                tooltip=[
+                    alt.Tooltip('localTime:T', title='Date/Time', format='%d.%m. %H:%M'),
+                    alt.Tooltip('Total:Q', title='Total Price', format='.2f'),
+                    alt.Tooltip('Component:N', title='Component'),
+                    alt.Tooltip('y_start:Q', title='From', format='.2f'),
+                    alt.Tooltip('y_end:Q', title='To', format='.2f'),
+                    alt.Tooltip('Temperature:Q', title='Temp (°C)', format='.1f')
+                ]
+            )
+            
+            # Update p_min_adj/p_max for zero line alignment
+            p_min_adj, p_max = p_min_total, p_max_total
 
         # Zero Line for Price Axis
         zero_line = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule(
@@ -506,17 +598,28 @@ def render_electricity_prices() -> None:
         
         # Statistics summary
         summary = fingrid_prices.get_price_summary(price_data)
+        if show_total:
+            # Adjust metrics for Total Price
+            offset = AI_TRANSFER + BI_BASE
+            avg_val = summary['avg'] + offset
+            min_val = summary['min'] + offset
+            max_val = summary['max'] + offset
+        else:
+            avg_val = summary['avg']
+            min_val = summary['min']
+            max_val = summary['max']
+
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Average Price", f"{summary['avg']:.2f} c / kWh")
+            st.metric("Average Price", f"{avg_val:.2f} c / kWh")
         with col2:
-            st.metric("Min Price", f"{summary['min']:.2f} c / kWh")
+            st.metric("Min Price", f"{min_val:.2f} c / kWh")
         with col3:
-            st.metric("Max Price", f"{summary['max']:.2f} c / kWh")
+            st.metric("Max Price", f"{max_val:.2f} c / kWh")
             
         st.altair_chart(final_chart, use_container_width=True)
         
-        st.caption("💡 Spot prices (c / kWh) and Paippinen temp (°C). Blue line=Temp, Bars=Price. Blue=Past, Grey=Future, Green=Cheapest 2h, Red=Expensive 2h.")
+        st.caption(f"💡 prices (c / kWh) and Paippinen temp (°C). Transfer Fee={AI_TRANSFER}, Fixed Margin={BI_BASE}. Blue line=Temp, Bars=Price. Blue=Past, Grey=Future, Green=Cheapest 2h, Red=Expensive 2h.")
         
     except Exception as e:
         st.error(f"⚠️ Could not fetch electricity prices: {e}")
