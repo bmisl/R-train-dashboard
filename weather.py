@@ -41,13 +41,13 @@ try:
     DEFAULT_TIMEZONE = ZoneInfo("Europe/Helsinki")
 except Exception:  # pragma: no cover - fallback for systems without timezone database
     DEFAULT_TIMEZONE = datetime.timezone.utc
-STORED_QUERY = "fmi::forecast::harmonie::surface::point::multipointcoverage"
+STORED_QUERY = "fmi::forecast::harmonie::surface::point::timevaluepair"
 STEP_MIN = 60
 
 _PARAMETER_MAP = {
     "precipitation_amount": "PrecipitationAmount",
     "precipitation": "PrecipitationAmount",
-    "temperature": "Temperature",
+    "temperature": "temperature",
     "windspeedms": "WindSpeedMS",
     "wind_speed": "WindSpeedMS",
     "weather_symbol3": "WeatherSymbol3",
@@ -197,7 +197,7 @@ def set_config(place=None, forecast_hours=None):
 # -----------------------------------
 def _fetch_forecast(parameter: str, *, place: Optional[str] = None,
                     forecast_hours: Optional[int] = None):
-    """Fetch forecast values and geolocation from FMI Open Data for a given parameter."""
+    """Fetch forecast values from FMI Open Data using the 'timevaluepair' query."""
     now = datetime.datetime.now(datetime.UTC)
     place = place or _config["place"]
     forecast_hours = forecast_hours or _config["forecast_hours"]
@@ -207,13 +207,12 @@ def _fetch_forecast(parameter: str, *, place: Optional[str] = None,
     fmi_parameter = _PARAMETER_MAP.get(parameter.lower(), parameter)
     url = (
         "https://opendata.fmi.fi/wfs?"
-        f"service=WFS&version=2.0.0&request=getFeature"
+        "service=WFS&version=2.0.0&request=getFeature"
         f"&storedquery_id={STORED_QUERY}"
         f"&place={place}"
         f"&parameters={fmi_parameter}"
         f"&starttime={starttime}"
         f"&endtime={endtime}"
-        f"&timestep={STEP_MIN}"
     )
 
     try:
@@ -223,37 +222,117 @@ def _fetch_forecast(parameter: str, *, place: Optional[str] = None,
         return [], None, f"❌ Failed to fetch FMI forecast: {e}"
 
     root = ET.fromstring(r.content)
-    ns = _NS.copy()
-    ns["sams"] = "http://www.opengis.net/samplingSpatial/2.0"
+    ns = {
+        "wfs": "http://www.opengis.net/wfs/2.0",
+        "gml": "http://www.opengis.net/gml/3.2",
+        "wml2": "http://www.opengis.net/waterml/2.0",
+        "om": "http://www.opengis.net/om/2.0",
+    }
 
-    # Extract location
-    pos_elem = root.find(".//sams:shape//gml:pos", ns)
-    location = None
-    if pos_elem is not None and pos_elem.text:
-        coords = pos_elem.text.strip().split()
-        if len(coords) == 2:
-            lat, lon = map(float, coords)
-            location = (lat, lon)
-
-    # Extract values
+    # Extract values from TimeValuePair structure
+    times: List[datetime.datetime] = []
     values: List[Optional[float]] = []
-    for block in root.findall(".//omso:GridSeriesObservation//gml:doubleOrNilReasonTupleList", _NS):
-        text = block.text.strip() if block.text else ""
-        for v in text.split():
+    
+    for measurement in root.findall(".//wml2:MeasurementTVP", ns):
+        time_elem = measurement.find("wml2:time", ns)
+        val_elem = measurement.find("wml2:value", ns)
+        if time_elem is not None and val_elem is not None:
             try:
-                value = float(v)
-                if math.isnan(value):
-                    values.append(None)
-                else:
-                    values.append(value)
-            except ValueError:
+                dt = datetime.datetime.fromisoformat(time_elem.text.replace("Z", "+00:00"))
+                val_text = val_elem.text
+                if val_text and val_text.lower() != "nan":
+                    val = float(val_text)
+                    times.append(dt)
+                    values.append(val)
+            except (ValueError, TypeError):
                 continue
 
-    if not values:
-        return [], location, None
+    return list(zip(times, values)), None, None
 
-    times = [now + datetime.timedelta(hours=i) for i in range(len(values))]
-    return list(zip(times, values)), location, None
+
+def _fetch_observations(parameter: str, *, place: Optional[str] = None,
+                        hours_past: int = 24):
+    """Fetch recent observations from FMI Open Data using the 'simple' query."""
+    now = datetime.datetime.now(datetime.UTC)
+    place = place or _config["place"]
+    starttime = (now - datetime.timedelta(hours=hours_past)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    endtime = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    stored_query = "fmi::observations::weather::simple"
+    fmi_parameter = _PARAMETER_MAP.get(parameter.lower(), parameter)
+    if fmi_parameter == "Temperature":
+        fmi_parameter = "t2m"
+
+    def execute_query(target_place):
+        url = (
+            "https://opendata.fmi.fi/wfs?"
+            "service=WFS&version=2.0.0&request=getFeature"
+            f"&storedquery_id={stored_query}"
+            f"&place={target_place}"
+            f"&parameters={fmi_parameter}"
+            f"&starttime={starttime}"
+            f"&endtime={endtime}"
+        )
+        try:
+            r = requests.get(url, timeout=20)
+            r.raise_for_status()
+            return r.content
+        except Exception:
+            return None
+
+    content = execute_query(place)
+    
+    # Fallback to 'Sipoo' if 'Paippinen' returned no points or failed
+    # This is a bit specific but helps when village-level mapping fails in 'simple' query
+    if not content or b"BsWfsElement" not in content:
+        if place.lower() == "paippinen":
+            content = execute_query("Sipoo")
+
+    if not content:
+        return [], None, "❌ Failed to fetch FMI observations"
+
+    root = ET.fromstring(content)
+    ns = {
+        "wfs": "http://www.opengis.net/wfs/2.0",
+        "BsWfs": "http://xml.fmi.fi/schema/wfs/2.0",
+    }
+    
+    points: List[Tuple[datetime.datetime, float]] = []
+    for element in root.findall(".//BsWfs:BsWfsElement", ns):
+        time_elem = element.find("BsWfs:Time", ns)
+        val_elem = element.find("BsWfs:ParameterValue", ns)
+        if time_elem is not None and val_elem is not None:
+            try:
+                dt = datetime.datetime.fromisoformat(time_elem.text.replace("Z", "+00:00"))
+                val = float(val_elem.text)
+                if not math.isnan(val):
+                    points.append((dt, val))
+            except (ValueError, TypeError):
+                continue
+
+    return points, None, None
+
+
+def get_temperature_series(place: str, hours_past: int = 24, hours_future: int = 24):
+    """
+    Get a combined series of temperature observations and forecasts.
+    Returns: List of (datetime, temperature_c)
+    """
+    obs, _, err_obs = _fetch_observations("temperature", place=place, hours_past=hours_past)
+    forecasts, _, err_forecast = _fetch_forecast("temperature", place=place, forecast_hours=hours_future)
+    
+    # Combine and sort
+    combined = []
+    if obs:
+        combined.extend(obs)
+    if forecasts:
+        combined.extend(forecasts)
+    
+    # Remove None values, keep only hourly points (minute == 0) and sort by time
+    combined = [(t, v) for t, v in combined if v is not None and t.minute == 0]
+    combined.sort(key=lambda x: x[0])
+    
+    return combined
 
 
 # -----------------------------------
@@ -481,10 +560,14 @@ def _parse_time_string(time_str):
         time_part = t.replace("tomorrow", "").strip()
         target_time = datetime.datetime.strptime(time_part, "%H:%M").time()
         target = datetime.datetime.combine(now.date() + datetime.timedelta(days=1), target_time)
+    elif t.startswith("today"):
+        time_part = t.replace("today", "").strip()
+        target_time = datetime.datetime.strptime(time_part, "%H:%M").time()
+        target = datetime.datetime.combine(now.date(), target_time)
     else:
         target_time = datetime.datetime.strptime(t, "%H:%M").time()
         target = datetime.datetime.combine(now.date(), target_time)
-        if target < now:
+        if target < now - datetime.timedelta(hours=1): # Allow 1h buffer for current hour checks
             target += datetime.timedelta(days=1)
     return target
 
@@ -604,8 +687,8 @@ def _collect_weather_metrics(time_str: str):
     temp_val = _value_at(temp_data, target_time)
     wind_val = _value_at(wind_data, target_time)
 
-    if any(v is None for v in (rain_rate, temp_val, wind_val)):
-        return None, "📭 No forecast available for that time."
+    if temp_val is None:
+        return None, "📭 No temperature forecast available for that time."
 
     metrics = {
         "target_time": target_time,

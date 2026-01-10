@@ -69,7 +69,7 @@ def prepare_chart_data(price_data: List[Dict]) -> Tuple[List[datetime], List[flo
     Transform price data into chart-ready format.
     
     Returns:
-        Tuple of (timestamps, prices_in_snt_kWh)
+        Tuple of (timestamps, prices_in_c_kWh)
     """
     timestamps = []
     prices = []
@@ -102,8 +102,8 @@ if __name__ == "__main__":
     if prices:
         print(f"Fetched {len(prices)} price points.")
         summary = get_price_summary(prices)
-        print(f"Avg: {summary['avg']:.2f} snt/kWh")
-        print(f"Min: {summary['min']:.2f} snt/kWh")
-        print(f"Max: {summary['max']:.2f} snt/kWh")
+        print(f"Avg: {summary['avg']:.2f} c / kWh")
+        print(f"Min: {summary['min']:.2f} c / kWh")
+        print(f"Max: {summary['max']:.2f} c / kWh")
     else:
         print("No data fetched.")

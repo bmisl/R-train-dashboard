@@ -34,7 +34,7 @@ def main():
 
     # 3. Filter and Format
     csv_rows = []
-    print(f"\n{'Time (Finnish)':<18} | {'Price (snt/kWh)'}")
+    print(f"\n{'Time (Finnish)':<18} | {'Price (c / kWh)'}")
     print("-" * 40)
 
     for entry in data:
@@ -47,7 +47,7 @@ def main():
             price = round(entry['value'], 3)
             time_display = local_dt.strftime('%d.%m. %H:%M')
             
-            print(f"{time_display:<18} | {price:>11.3f} snt")
+            print(f"{time_display:<18} | {price:>11.3f} c")
             
             csv_rows.append([
                 local_dt.strftime('%Y-%m-%d %H:%M'), 
@@ -59,7 +59,7 @@ def main():
         filename = 'spot_prices.csv'
         with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f, delimiter=';')
-            writer.writerow(['Timestamp', 'Price_snt_kWh'])
+            writer.writerow(['Timestamp', 'Price_c_kWh'])
             writer.writerows(csv_rows)
         print(f"\n✅ Exported {len(csv_rows)} rows to {filename}")
 

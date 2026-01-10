@@ -10,6 +10,8 @@ It combines:
 - 📷 **Traffic cameras and roadworks**
 - 🌡️ **Weather station data, humidity, wind, and precipitation**
 - 🚗 **Traffic measurement (speed & volume)**
+- ⚡ **Real-time Electricity Prices (spot prices in c / kWh)**
+- 🌡️ **Outdoor Temperature History & Forecast (±24h)**
 
 ---
 
@@ -20,7 +22,8 @@ This project brings together multiple data sources into one real-time web dashbo
 - **Top section:** Live train information between two configured stations (e.g. Ainola ↔ Helsinki)
 - **Audio prompt:** During the afternoon announcement window, click the train button to hear the next Helsinki R-train track and time.
 - **Bottom section:** Interactive road map showing conditions, live sensor data, and roadworks
-- **Data:** Pulled live from Digitraffic’s REST APIs for rail, road, and weather networks
+- **Price tracking:** Real-time electricity spot prices with integrated outdoor temperature monitoring for Paippinen.
+- **Data:** Pulled live from Digitraffic, Sähkötin.fi, and FMI (Finnish Meteorological Institute)
 - **Framework:** Streamlit + Folium (Leaflet) for visualization
 
 Everything runs locally or on Streamlit Cloud without any server setup.
@@ -36,7 +39,8 @@ r-commute-dashboard/
 ├── trains_display.py    # Fetches + renders live train departures/arrivals
 ├── roads_display.py     # Creates Folium map with roads, sensors, weather
 ├── roads.py             # Logic layer for road, weather, and sensor data
-├── sensors.py           # (Legacy) extra sensor utilities
+├── fingrid_prices.py    # Fetches ±24h electricity spot prices from Sähkötin.fi
+├── weather.py           # Fetches observations and forecasts from FMI
 ├── config.py            # Configuration (API endpoints, coordinates, etc.)
 ├── config.json          # Bounding box, markers, and API source definitions
 └── README.md            # This file
@@ -219,6 +223,24 @@ https://tie.digitraffic.fi/api/tms/v1/stations/{id}/data
 <tr><td><code>measuredTime</code></td><td>Time of measurement</td></tr>
 <tr><td><code>unit</code></td><td>Unit of measurement (km/h, kpl/h)</td></tr>
 </table>
+
+### 6️⃣ Electricity Spot Prices (Sähkötin.fi)
+
+**Endpoint:**
+```
+https://sahkotin.fi/prices?quarter&fix&vat
+```
+Provides 15-minute interval prices including VAT. Units used in dashboard: **c / kWh**.
+
+---
+
+### 7️⃣ Weather Observations and Forecasts (FMI Open Data)
+
+**Endpoints:**
+- Observations: `fmi::observations::weather::simple`
+- Forecasts: `fmi::forecast::harmonie::surface::point::timevaluepair`
+
+Used to provide a continuous ±24h temperature series for the specified location (Paippinen).
 
 ---
 

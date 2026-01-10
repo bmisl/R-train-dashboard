@@ -340,42 +340,50 @@ def render_live_train_map() -> None:
 
 def render_weather_alert() -> None:
     """Display weather alert if conditions warrant attention."""
-    needs_attention, icon, details = weather.rough_weather_check()
-    if needs_attention:
-        st.markdown(f"### {icon} Commute weather alert")
-        st.markdown(details)
-
+    try:
+        needs_attention, icon, details = weather.rough_weather_check()
+        if needs_attention:
+            st.markdown(f"### {icon} Commute weather alert")
+            st.markdown(details)
+    except Exception as e:
+        st.warning(f"Could not check commute weather: {e}")
 
 def render_electricity_prices() -> None:
-    """Display electricity prices for ±24 hours as a highly customized Altair chart."""
-    st.markdown("### ⚡ Electricity Prices (±24h)")
+    """Display electricity prices for ±24 hours as a highly customized Altair chart with temperature."""
+    st.markdown("### ⚡ Electricity Prices & Temperature (±24h)")
     
     try:
         # Fetch price data using sähkötin.fi logic (accurate spot prices)
         price_data = fingrid_prices.get_plus_minus_24h_prices()
         
+        # Fetch temperature data for Paippinen
+        try:
+            temp_series = weather.get_temperature_series("Paippinen", hours_past=24, hours_future=24)
+        except Exception as te:
+            st.warning(f"Could not fetch temperature data: {te}")
+            temp_series = []
+        
         if not price_data:
             st.warning("No electricity price data available for the ±24h period.")
             return
         
-        # Prepare DataFrame
+        # Prepare DataFrames
         import pandas as pd
         import altair as alt
         from datetime import datetime
         
-        df = pd.DataFrame(price_data)
-        df['localTime'] = pd.to_datetime(df['localTime'])
-        df['localEndTime'] = pd.to_datetime(df['localEndTime'])
+        df_prices = pd.DataFrame(price_data)
+        df_prices['localTime'] = pd.to_datetime(df_prices['localTime'])
+        df_prices['localEndTime'] = pd.to_datetime(df_prices['localEndTime'])
         now = datetime.now(fingrid_prices.TZ)
         
         # 1. Add "Type" for color coding (Past/Future)
-        df['Period'] = df['localTime'].apply(lambda x: 'Past' if x < now else 'Future')
+        df_prices['Period'] = df_prices['localTime'].apply(lambda x: 'Past' if x < now else 'Future')
         
         # 2. Identify Highlights (2 cheapest and 2 most expensive slots)
-        # We sort by value and take indices
-        sorted_df = df.sort_values('value')
-        cheapest_indices = sorted_df.head(8).index # 8 slots = 2 hours
-        expensive_indices = sorted_df.tail(8).index # 8 slots = 2 hours
+        sorted_df = df_prices.sort_values('value')
+        cheapest_indices = sorted_df.head(8).index 
+        expensive_indices = sorted_df.tail(8).index 
         
         # 3. Calculate Colors in DataFrame for stability
         def get_color(row):
@@ -387,29 +395,98 @@ def render_electricity_prices() -> None:
                 return '#3498db' # Blue
             return '#bdc3c7'      # Grey
             
-        df['color'] = df.apply(get_color, axis=1)
+        df_prices['color'] = df_prices.apply(get_color, axis=1)
         
-        # Create Altair Chart
-        chart = alt.Chart(df).mark_bar(
+        # Define df_temp early
+        if temp_series:
+            df_temp = pd.DataFrame(temp_series, columns=['time', 'temp'])
+            df_temp['time'] = pd.to_datetime(df_temp['time'])
+            # Ensure TZ consistency for merge
+            df_temp['time'] = df_temp['time'].dt.tz_convert(fingrid_prices.TZ)
+        else:
+            df_temp = pd.DataFrame(columns=['time', 'temp'])
+
+        # Merge Price and Temp data for unified tooltips
+        df_prices = df_prices.sort_values('localTime')
+        if not df_temp.empty:
+            df_temp_sorted = df_temp.sort_values('time')
+            df_merged = pd.merge_asof(
+                df_prices,
+                df_temp_sorted.rename(columns={'time': 'localTime', 'temp': 'Temperature'}),
+                on='localTime',
+                direction='nearest'
+            )
+        else:
+            df_merged = df_prices.copy()
+            df_merged['Temperature'] = None
+
+        # 4. Use fixed zero-aligned domains
+        # To align zeros at 50% height while covering: 
+        # Prices: -10 to 30 -> needs [-30, 30]
+        # Temp: -20 to 5 -> needs [-20, 20]
+        p_min_adj, p_max = -30, 30
+        t_min_adj, t_max = -20, 20
+
+        # Price Chart (Left Axis)
+        price_chart = alt.Chart(df_merged).mark_bar(
             stroke=None
         ).encode(
             x=alt.X('localTime:T', 
                     title=None,
                     axis=alt.Axis(format='%H:%M', labelAngle=0, grid=False)),
-            x2='localEndTime:T', # Enforce width to the next 15-min mark
-            y=alt.Y('value:Q', title='snt/kWh'),
-            y2=alt.value(0),      # Extend bars to the base
-            color=alt.Color('color:N', scale=None), # Use pre-calculated colors
+            x2='localEndTime:T',
+            y=alt.Y('value:Q', title='c / kWh', scale=alt.Scale(domain=[p_min_adj, p_max])),
+            y2=alt.datum(0),      # Properly extend bars to the data-level 0
+            color=alt.Color('color:N', scale=None),
             tooltip=[
                 alt.Tooltip('localTime:T', title='Date/Time', format='%d.%m. %H:%M'),
-                alt.Tooltip('value:Q', title='Price (snt/kWh)', format='.2f')
+                alt.Tooltip('value:Q', title='Price (c / kWh)', format='.2f'),
+                alt.Tooltip('Temperature:Q', title='Temp (°C)', format='.1f')
             ]
-        ).properties(
-            height=400,
         )
-        
+
+        # Zero Line for Price Axis
+        zero_line = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule(
+            color='black',
+            strokeWidth=2
+        ).encode(y=alt.Y('y:Q', scale=alt.Scale(domain=[p_min_adj, p_max])))
+
+        # Temperature Chart (Right Axis)
+        if not df_temp.empty:
+            temp_line = alt.Chart(df_temp).mark_line(
+                color='#3498db',
+                strokeWidth=2.5,  # Thicker line
+                opacity=1.0,      # Fully opaque
+                interpolate='monotone'
+            ).encode(
+                x='time:T',
+                y=alt.Y('temp:Q', title='°C', 
+                        axis=alt.Axis(orient='right'),
+                        scale=alt.Scale(domain=[t_min_adj, t_max])),
+                tooltip=[
+                    alt.Tooltip('time:T', title='Time', format='%H:%M'),
+                    alt.Tooltip('temp:Q', title='Temp (°C)', format='.1f')
+                ]
+            )
+            
+            # Add points to ensure we see individual data points
+            temp_points = alt.Chart(df_temp).mark_circle(
+                color='#3498db',
+                size=30
+            ).encode(
+                x='time:T',
+                y=alt.Y('temp:Q', scale=alt.Scale(domain=[t_min_adj, t_max])),
+                tooltip=[
+                    alt.Tooltip('time:T', title='Time', format='%H:%M'),
+                    alt.Tooltip('temp:Q', title='Temp (°C)', format='.1f')
+                ]
+            )
+            
+            temp_layer = temp_line + temp_points
+        else:
+            temp_layer = alt.Chart(pd.DataFrame()).mark_line()
+
         # Add a vertical line for Midnight
-        # Find the midnight timestamp between today and tomorrow
         tomorrow_start = now.replace(hour=0, minute=0, second=0, microsecond=0) + pd.Timedelta(days=1)
         midnight_line = alt.Chart(pd.DataFrame({'x': [tomorrow_start]})).mark_rule(
             color='white',
@@ -417,9 +494,13 @@ def render_electricity_prices() -> None:
             strokeWidth=2
         ).encode(x='x:T')
         
-        # Combine chart and line
-        # Note: Config must be applied to the LAYERED chart, not the base chart
-        final_chart = (chart + midnight_line).interactive().configure_view(
+        # Layering charts
+        # Resolve scales as independent to get separate axes, but they are aligned by our manual domain calculation
+        final_chart = alt.layer(price_chart, temp_layer, zero_line, midnight_line).resolve_scale(
+            y='independent'
+        ).properties(
+            height=400
+        ).interactive().configure_view(
             strokeWidth=0
         )
         
@@ -427,15 +508,15 @@ def render_electricity_prices() -> None:
         summary = fingrid_prices.get_price_summary(price_data)
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Average", f"{summary['avg']:.2f} snt/kWh")
+            st.metric("Average Price", f"{summary['avg']:.2f} c / kWh")
         with col2:
-            st.metric("Min", f"{summary['min']:.2f} snt/kWh")
+            st.metric("Min Price", f"{summary['min']:.2f} c / kWh")
         with col3:
-            st.metric("Max", f"{summary['max']:.2f} snt/kWh")
+            st.metric("Max Price", f"{summary['max']:.2f} c / kWh")
             
         st.altair_chart(final_chart, use_container_width=True)
         
-        st.caption("💡 Spot prices from Sähkötin.fi API (incl. VAT and standard fees). Blue=Past, Grey=Future, Green=Cheapest 2h, Red=Expensive 2h.")
+        st.caption("💡 Spot prices (c / kWh) and Paippinen temp (°C). Blue line=Temp, Bars=Price. Blue=Past, Grey=Future, Green=Cheapest 2h, Red=Expensive 2h.")
         
     except Exception as e:
         st.error(f"⚠️ Could not fetch electricity prices: {e}")
