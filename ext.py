@@ -379,11 +379,26 @@ def render_electricity_prices() -> None:
         if not price_data:
             st.warning("No electricity price data available for the ±24h period.")
             return
+
+        # Prepare for spot price text display (Now, +15, +30, +45, +60)
+        from datetime import datetime, timedelta
+        now_helsinki = datetime.now(fingrid_prices.TZ)
+        offsets = [0, 15, 30, 45, 60]
+        spot_info = []
+        for offset in offsets:
+            t_target = now_helsinki + timedelta(minutes=offset)
+            val = next((p['value'] for p in price_data if p['localTime'] <= t_target < p['localEndTime']), None)
+            label = "Now" if offset == 0 else f"+{offset}m"
+            if val is not None:
+                spot_info.append(f"**{label}:** {val:.2f}")
+            else:
+                spot_info.append(f"**{label}:** N/A")
+        
+        st.markdown(f"📍 **Spot Prices (c/kWh):** {' | '.join(spot_info)}")
         
         # Prepare DataFrames
         import pandas as pd
         import altair as alt
-        from datetime import datetime
         
         df_prices = pd.DataFrame(price_data)
         df_prices['localTime'] = pd.to_datetime(df_prices['localTime'])
@@ -421,12 +436,24 @@ def render_electricity_prices() -> None:
             df_merged = df_prices.copy()
             df_merged['Temperature'] = None
 
-        # 4. Use fixed zero-aligned domains
-        # To align zeros at 50% height while covering: 
-        # Prices: -10 to 30 -> needs [-30, 30]
-        # Temp: -20 to 5 -> needs [-20, 20]
-        p_min_adj, p_max = -30, 30
-        t_min_adj, t_max = -20, 20
+        # 4. Use dynamic symmetric domains to align zero in the middle
+        # This ensures that 0 on the left axis and 0 on the right axis are at the same vertical level (the center).
+        p_vals = df_merged['value'].tolist()
+        if show_total:
+            offset = AI_TRANSFER + BI_BASE
+            p_vals = [v + offset for v in p_vals]
+        
+        p_max_abs = max([abs(v) for v in p_vals] + [1]) * 1.1
+        p_min_adj, p_max_adj = -p_max_abs, p_max_abs
+
+        if not df_temp.empty:
+            t_vals = df_temp['temp'].tolist()
+            t_max_abs = max([abs(v) for v in t_vals] + [1]) * 1.1
+            t_min_adj, t_max_adj = -t_max_abs, t_max_abs
+        else:
+            t_min_adj, t_max_adj = -10, 10
+
+        # Prepare color and stacking data
 
         # Prepare color and stacking data
         if not show_total:
@@ -447,13 +474,16 @@ def render_electricity_prices() -> None:
             df_plot['Component'] = 'Spot Price'
             
             price_chart = alt.Chart(df_plot).mark_bar(
-                stroke=None
+                stroke=None,
+                clip=True
             ).encode(
                 x=alt.X('localTime:T', 
                         title=None,
                         axis=alt.Axis(format='%H:%M', labelAngle=0, grid=False)),
                 x2='localEndTime:T',
-                y=alt.Y('value:Q', title='c / kWh', scale=alt.Scale(domain=[p_min_adj, p_max])),
+                y=alt.Y('value:Q', 
+                        title='c / kWh', 
+                        scale=alt.Scale(domain=[p_min_adj, p_max_adj])),
                 y2=alt.datum(0),
                 color=alt.Color('color:N', scale=None),
                 tooltip=[
@@ -509,19 +539,17 @@ def render_electricity_prices() -> None:
             
             df_plot = pd.DataFrame(rows)
             
-            # Domain for total price needs to be larger
-            total_max = df_plot['Total'].max()
-            p_max_total = max(30, (int(total_max / 10) + 1) * 10)
-            p_min_total = p_min_adj # Keep zero alignment
-
             price_chart = alt.Chart(df_plot).mark_bar(
-                stroke=None
+                stroke=None,
+                clip=True
             ).encode(
                 x=alt.X('localTime:T', 
                         title=None,
                         axis=alt.Axis(format='%H:%M', labelAngle=0, grid=False)),
                 x2='localEndTime:T',
-                y=alt.Y('y_start:Q', title='c / kWh', scale=alt.Scale(domain=[p_min_total, p_max_total])),
+                y=alt.Y('y_start:Q', 
+                        title='c / kWh', 
+                        scale=alt.Scale(domain=[p_min_adj, p_max_adj])),
                 y2='y_end:Q',
                 color=alt.Color('color:N', scale=None),
                 tooltip=[
@@ -533,15 +561,11 @@ def render_electricity_prices() -> None:
                     alt.Tooltip('Temperature:Q', title='Temp (°C)', format='.1f')
                 ]
             )
-            
-            # Update p_min_adj/p_max for zero line alignment
-            p_min_adj, p_max = p_min_total, p_max_total
-
         # Zero Line for Price Axis
         zero_line = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule(
             color='black',
             strokeWidth=2
-        ).encode(y=alt.Y('y:Q', scale=alt.Scale(domain=[p_min_adj, p_max])))
+        ).encode(y=alt.Y('y:Q', title=None, axis=None, scale=alt.Scale(domain=[p_min_adj, p_max_adj])))
 
         # Temperature Chart (Right Axis)
         if not df_temp.empty:
@@ -554,7 +578,7 @@ def render_electricity_prices() -> None:
                 x='time:T',
                 y=alt.Y('temp:Q', title='°C', 
                         axis=alt.Axis(orient='right'),
-                        scale=alt.Scale(domain=[t_min_adj, t_max])),
+                        scale=alt.Scale(domain=[t_min_adj, t_max_adj])),
                 tooltip=[
                     alt.Tooltip('time:T', title='Time', format='%H:%M'),
                     alt.Tooltip('temp:Q', title='Temp (°C)', format='.1f')
@@ -567,7 +591,7 @@ def render_electricity_prices() -> None:
                 size=30
             ).encode(
                 x='time:T',
-                y=alt.Y('temp:Q', scale=alt.Scale(domain=[t_min_adj, t_max])),
+                y=alt.Y('temp:Q', scale=alt.Scale(domain=[t_min_adj, t_max_adj])),
                 tooltip=[
                     alt.Tooltip('time:T', title='Time', format='%H:%M'),
                     alt.Tooltip('temp:Q', title='Temp (°C)', format='.1f')
@@ -584,7 +608,9 @@ def render_electricity_prices() -> None:
             color='white',
             strokeDash=[5, 5],
             strokeWidth=2
-        ).encode(x='x:T')
+        ).encode(
+            x='x:T'
+        )
         
         # Layering charts
         # Resolve scales as independent to get separate axes, but they are aligned by our manual domain calculation
