@@ -331,7 +331,7 @@ def render_live_train_map() -> None:
                 <div class="embed-title">Live R-Train Map (morning peak)</div>
                 <div class="embed-frame" style="position: relative; padding-bottom: 75%; height: 0;">
                     <iframe
-                        src="https://14142.net/kartalla/index.en.html?data=hsl&lat=60.475&lng=25.1&zoom=13&types=train&routes=R"
+                        src="https://14142.net/kartalla/index.en.html?data=hsl&lat=60.475&lng=25.1&zoom=13&vp=1&types=train&routes=R"
                         title="Live Train Map"
                         loading="lazy"
                         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">

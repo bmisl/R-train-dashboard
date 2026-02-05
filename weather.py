@@ -819,9 +819,9 @@ def rough_weather_check() -> tuple[bool, str, str]:
     max_rain = 0.0
     max_snow = 0.0
     min_temp: Optional[float] = None
-    rain_details: List[str] = []
-    snow_details: List[str] = []
-    cold_details: List[str] = []
+    
+    # Store alerts categorized by label
+    alerts_by_label: Dict[str, List[str]] = {}
 
     for place, time_str, label in checks:
         set_config(place=place, forecast_hours=36)
@@ -830,30 +830,32 @@ def rough_weather_check() -> tuple[bool, str, str]:
             continue
         rain = metrics["rain_mm"] or 0.0
         temp_c = metrics["temperature_c"]
+        
+        if temp_c is not None:
+            if min_temp is None or temp_c < min_temp:
+                min_temp = temp_c
+        
+        label_alerts = []
         if rain > 0 and temp_c is not None:
             if temp_c < 0:
-                snow_details.append(f"{label}: {rain:.1f}mm @ {temp_c:.1f}°C")
+                label_alerts.append(f"Snow: {rain:.1f}mm @ {temp_c:.1f}°C")
                 max_snow = max(max_snow, rain)
             else:
-                rain_details.append(f"{label}: {rain:.1f}mm")
+                label_alerts.append(f"Rain: {rain:.1f}mm")
                 max_rain = max(max_rain, rain)
-        if temp_c is not None and (min_temp is None or temp_c < min_temp):
-            min_temp = temp_c
+        
         if temp_c is not None and temp_c < 0:
-            cold_details.append(f"{label}: {temp_c:.1f}°C")
+            # Only add "Cold" if we didn't add "Snow" (which already mentioned the temp)
+            if not any(a.startswith("Snow:") for a in label_alerts):
+                label_alerts.append(f"Cold: {temp_c:.1f}°C")
+        
+        if label_alerts:
+            alerts_by_label[label] = label_alerts
 
     # Adaptive classification
     rain_flag = max_rain >= 0.5
     snow_flag = max_snow >= 0.5
     cold_flag = min_temp is not None and min_temp < 0
-
-    sections: List[str] = []
-    if rain_details:
-        sections.append("Rain: " + "; ".join(rain_details))
-    if snow_details:
-        sections.append("Snow: " + "; ".join(snow_details))
-    if cold_flag:
-        sections.append("Cold: " + "; ".join(cold_details))
 
     if not (rain_flag or snow_flag or cold_flag):
         return False, "", ""
@@ -876,7 +878,12 @@ def rough_weather_check() -> tuple[bool, str, str]:
     else:
         icon = "🌤️"
 
-    details = "\n".join(sections)
+    # Build details string: group by label as requested
+    lines = []
+    for label, alerts in alerts_by_label.items():
+        lines.append(f"{label}: {'; '.join(alerts)}")
+    
+    details = ";  \n".join(lines)
     return True, icon, details
 
 
